@@ -2482,7 +2482,7 @@ public class PermissionManagerService extends IPermissionManager.Stub {
 <<<<<<< HEAD
 =======
     public static boolean isSpecialRuntimePermission(final String permission) {
-        return Manifest.permission.INTERNET.equals(permission);
+        return Manifest.permission.INTERNET.equals(permission) || Manifest.permission.OTHER_SENSORS.equals(permission);
     }
 
 >>>>>>> 7d693163f69... make INTERNET into a special runtime permission
