@@ -917,7 +917,9 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                 (DevicePolicyManager) mContext.getSystemService(Context.DEVICE_POLICY_SERVICE);
         return dpm != null && (dpm.getKeyguardDisabledFeatures(null, userId)
                     & DevicePolicyManager.KEYGUARD_DISABLE_FINGERPRINT) != 0
-                || isSimPinSecure();
+                || isSimPinSecure()
+                || Settings.Secure.getIntForUser(mContext.getContentResolver(),
+                        Settings.Secure.FINGERPRINT_UNLOCK_KEYGUARD_ENABLED, 1, userId) == 0;
     }
 
     private boolean isFaceDisabled(int userId) {
