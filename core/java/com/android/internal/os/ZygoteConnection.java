@@ -597,6 +597,7 @@ class ZygoteConnection {
             throw new IllegalStateException("WrapperInit.execApplication unexpectedly returned");
         } else {
             if (!isZygote) {
+                /*
                 if (SystemProperties.getBoolean("sys.spawn.exec", true) &&
                         (parsedArgs.mRuntimeFlags & ApplicationInfo.FLAG_DEBUGGABLE) == 0) {
                     ExecInit.execApplication(parsedArgs.mNiceName, parsedArgs.mTargetSdkVersion,
@@ -605,6 +606,7 @@ class ZygoteConnection {
                     // Should not get here.
                     throw new IllegalStateException("ExecInit.execApplication unexpectedly returned");
                 }
+                */
                 return ZygoteInit.zygoteInit(parsedArgs.mTargetSdkVersion,
                         parsedArgs.mRemainingArgs, null /* classLoader */);
             } else {
