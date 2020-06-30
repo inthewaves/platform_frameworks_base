@@ -125,7 +125,7 @@ public class NtpTrustedTime implements TrustedTime {
         final boolean networkPollTime = res.getBoolean(com.android.internal.R.string.config_nitzTimeUpdate, true);
         if (!networkPollTime) {
             Log.d(TAG, "nitzTimeUpdate disabled, bailing early from forceRefresh()");
-            return;
+            return false;
         }
 
         // We can't do this at initialization time: ConnectivityService might not be running yet.
