@@ -636,7 +636,7 @@ class UserController implements Handler.Callback {
             throw new SecurityException(msg);
         }
         if (userId < 0 || userId == UserHandle.USER_SYSTEM) {
-            throw new IllegalArgumentException("Can't stop system user " + userId);
+            // throw new IllegalArgumentException("Can't stop system user " + userId);
         }
         enforceShellRestriction(UserManager.DISALLOW_DEBUGGING_FEATURES, userId);
         synchronized (mLock) {
@@ -652,7 +652,8 @@ class UserController implements Handler.Callback {
     private int stopUsersLU(final int userId, boolean force,
             final IStopUserCallback stopUserCallback, KeyEvictedCallback keyEvictedCallback) {
         if (userId == UserHandle.USER_SYSTEM) {
-            return USER_OP_ERROR_IS_SYSTEM;
+            Slog.d(TAG, "DEBUG: originally, system user should be stopped");
+            // return USER_OP_ERROR_IS_SYSTEM;
         }
         if (isCurrentUserLU(userId)) {
             return USER_OP_IS_CURRENT;
@@ -661,7 +662,7 @@ class UserController implements Handler.Callback {
         // If one of related users is system or current, no related users should be stopped
         for (int i = 0; i < usersToStop.length; i++) {
             int relatedUserId = usersToStop[i];
-            if ((UserHandle.USER_SYSTEM == relatedUserId) || isCurrentUserLU(relatedUserId)) {
+            if (isCurrentUserLU(relatedUserId)) {
                 if (DEBUG_MU) Slog.i(TAG, "stopUsersLocked cannot stop related user "
                         + relatedUserId);
                 // We still need to stop the requested user if it's a force stop.
