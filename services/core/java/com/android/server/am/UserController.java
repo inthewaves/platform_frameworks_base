@@ -285,21 +285,22 @@ class UserController implements Handler.Callback {
             finishUserBoot(uss);
             startProfiles();
 
-            int count = 0;
-            for (Integer userId : mUserLru) {
-                count++;
-                Slog.i(TAG, "mUserLru(" + count + "): " + userId);
-            }
-
-            final boolean shouldShutdownBackground = Settings.Global.getInt(
+            final boolean shouldCheckAndStopUsersOverLimit = Settings.Global.getInt(
                     mInjector.getContext().getContentResolver(),
-                    Settings.Global.BACKGROUND_USERS_LIMIT_ENABLED, 1) == 1;
+                    Settings.Global.RUNNING_USERS_LIMIT_ENABLED, 1) == 1;
 
-            if (shouldShutdownBackground) {
-                // TODO: Reading settings
-                Slog.i(TAG, "Stopping users due to limits reached");
-                synchronized (mLock) {
+            synchronized (mLock) {
+                int count = 0;
+                for (Integer userId : mUserLru) {
+                    count++;
+                    Slog.i(TAG, "mUserLru[" + count + "]: " + userId);
+                }
+
+                if (shouldCheckAndStopUsersOverLimit) {
+                    Slog.i(TAG, "shouldCheckAndStopUsersOverLimit true");
                     stopRunningUsersLU(mMaxRunningUsers);
+                } else {
+                    Slog.i(TAG, "shouldCheckAndStopUsersOverLimit false");
                 }
             }
         });
