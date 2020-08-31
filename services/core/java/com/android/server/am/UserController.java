@@ -304,10 +304,13 @@ class UserController implements Handler.Callback {
                 continue;
             }
             if (userId == UserHandle.USER_SYSTEM) {
+                Slog.d(TAG, "DEBUG: Going to count the system user as running!");
+                // continue;
+
                 // We only count system user as running when it is not a pure system user.
-                if (UserInfo.isSystemOnly(userId)) {
-                    continue;
-                }
+                // if (UserInfo.isSystemOnly(userId)) {
+                //     continue;
+                // }
             }
             runningUsers.add(userId);
         }
@@ -320,12 +323,31 @@ class UserController implements Handler.Callback {
         Iterator<Integer> iterator = currentlyRunning.iterator();
         while (currentlyRunning.size() > maxRunningUsers && iterator.hasNext()) {
             Integer userId = iterator.next();
-            if (userId == UserHandle.USER_SYSTEM || userId == mCurrentUserId) {
-                // Owner/System user and current user can't be stopped
+            if (userId == mCurrentUserId) {
+                // Current user can't be stopped
                 continue;
             }
-            if (stopUsersLU(userId, false, null, null) == USER_OP_SUCCESS) {
+
+            KeyEvictedCallback keyEvictedCallback = null;
+            if (userId == UserHandle.USER_SYSTEM) {
+                Slog.d(TAG, "DEBUG: stopRunningUsersLU() Originally, owner/system user skipped via continue");
+
+                // Force the restart of the system user
+                keyEvictedCallback = new KeyEvictedCallback() {
+                    @Override
+                    public void keyEvicted(int userId) {
+                        // Post to the same handler that this callback is called from to ensure the user
+                        // cleanup is complete before restarting.
+                        // Launch in the background.
+                        mHandler.post(() -> UserController.this.startUser(userId, false));
+                    }
+                };
+            }
+
+            if (stopUsersLU(userId, false, null, keyEvictedCallback) == USER_OP_SUCCESS) {
                 iterator.remove();
+            } else {
+                Slog.d(TAG, "DEBUG: stopRunningUsersLU(): stopUsersLU didn't get USER_OP_SUCCESS");
             }
         }
     }
@@ -635,7 +657,24 @@ class UserController implements Handler.Callback {
             Slog.w(TAG, msg);
             throw new SecurityException(msg);
         }
-        if (userId < 0 || userId == UserHandle.USER_SYSTEM) {
+        if (userId < 0) {
+            throw new IllegalArgumentException("Can't stop user " + userId);
+        }
+        if (userId == UserHandle.USER_SYSTEM) {
+            Slog.d(TAG, "DEBUG: stopUser: Originally, system user not process");
+            if (userId == UserHandle.USER_SYSTEM && isCurrentUserLU(userId) &&
+                    keyEvictedCallback == null) {
+                // Restart the system user after stop...
+                keyEvictedCallback = new KeyEvictedCallback() {
+                    @Override
+                    public void keyEvicted(@UserIdInt int userId) {
+                        // Post to the same handler that this callback is called from to ensure the user
+                        // cleanup is complete before restarting.
+                        Slog.d(TAG, "DEBUG: System user key evicted; starting up again.");
+                        mHandler.post(() -> UserController.this.startUser(userId, false));
+                    }
+                };
+            }
             // throw new IllegalArgumentException("Can't stop system user " + userId);
         }
         enforceShellRestriction(UserManager.DISALLOW_DEBUGGING_FEATURES, userId);
@@ -654,8 +693,8 @@ class UserController implements Handler.Callback {
         if (userId == UserHandle.USER_SYSTEM) {
             Slog.d(TAG, "DEBUG: originally, system user should be stopped");
             // return USER_OP_ERROR_IS_SYSTEM;
-        }
-        if (isCurrentUserLU(userId)) {
+        } else if (isCurrentUserLU(userId)) {
+            Slog.d(TAG, "DEBUG: isCurrentUserLU");
             return USER_OP_IS_CURRENT;
         }
         int[] usersToStop = getUsersToStopLU(userId);
@@ -690,6 +729,7 @@ class UserController implements Handler.Callback {
         if (DEBUG_MU) Slog.i(TAG, "stopSingleUserLocked userId=" + userId);
         final UserState uss = mStartedUsers.get(userId);
         if (uss == null) {
+            Slog.d(TAG, "DEBUG: stopSingleUserLocked uss=null");
             // User is not started, nothing to do...  but we do need to
             // callback if requested.
             if (stopUserCallback != null) {
@@ -798,8 +838,12 @@ class UserController implements Handler.Callback {
             keyEvictedCallbacks = new ArrayList<>(uss.mKeyEvictedCallbacks);
             if (mStartedUsers.get(userId) != uss || uss.state != UserState.STATE_SHUTDOWN) {
                 stopped = false;
+                Slog.d(TAG, "DEBUG: finishUserStopped: userIdToLock " + userIdToLock + " did not stop");
+                Slog.d(TAG, "DEBUG: finishUserStopped: reason for not stopping: " + (mStartedUsers.get(userId) != uss ?
+                        "mStartedUsers.get(userId) != uss" : "uss.state != UserState.STATE_SHUTDOWN"));
             } else {
                 stopped = true;
+                Slog.d(TAG, "DEBUG: finishUserStopped: userIdToLock " + userIdToLock + " did stop.");
                 // User can no longer run.
                 mStartedUsers.remove(userId);
                 mUserLru.remove(Integer.valueOf(userId));
@@ -827,6 +871,7 @@ class UserController implements Handler.Callback {
         }
 
         if (stopped) {
+            Slog.d(TAG, "DEBUG: finishUserStopped: On path to evict key");
             mInjector.systemServiceManagerCleanupUser(userId);
             mInjector.stackSupervisorRemoveUser(userId);
             // Remove the user if it is ephemeral.
@@ -836,6 +881,7 @@ class UserController implements Handler.Callback {
             }
 
             if (!lockUser) {
+                Slog.d(TAG, "DEBUG: !lockuser caused return before key eviction");
                 return;
             }
             final int userIdToLockF = userIdToLock;
@@ -850,7 +896,9 @@ class UserController implements Handler.Callback {
                     }
                 }
                 try {
+                    Slog.d(TAG, "DEBUG: Going to evict key for " + userIdToLockF);
                     mInjector.getStorageManager().lockUserKey(userIdToLockF);
+                    Slog.d(TAG, "DEBUG: Done evicting key for " + userIdToLockF);
                 } catch (RemoteException re) {
                     throw re.rethrowAsRuntimeException();
                 }
@@ -1359,7 +1407,11 @@ class UserController implements Handler.Callback {
         UserInfo targetUserInfo = getUserInfo(targetUserId);
         if (targetUserId == currentUserId) {
             Slog.i(TAG, "user #" + targetUserId + " is already the current user");
-            return true;
+            if (currentUserId != UserHandle.USER_SYSTEM) {
+                return true;
+            } else {
+                Slog.d(TAG, "will try switch to the system user anyway");
+            }
         }
         if (targetUserInfo == null) {
             Slog.w(TAG, "No user info for user #" + targetUserId);
