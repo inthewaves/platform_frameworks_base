@@ -287,7 +287,7 @@ class UserController implements Handler.Callback {
 
             final boolean shouldStopRunningUsersIfOverLimit = Settings.Global.getInt(
                     mInjector.getContext().getContentResolver(),
-                    Settings.Global.RUNNING_USERS_LIMIT_ENABLED, 1) == 1;
+                    Settings.Global.RUNNING_USERS_LIMIT_ENABLED, 1) != 0;
 
             if (shouldStopRunningUsersIfOverLimit) {
                 synchronized (mLock) {
