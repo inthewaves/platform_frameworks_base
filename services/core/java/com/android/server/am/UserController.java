@@ -285,22 +285,13 @@ class UserController implements Handler.Callback {
             finishUserBoot(uss);
             startProfiles();
 
-            final boolean shouldCheckAndStopUsersOverLimit = Settings.Global.getInt(
+            final boolean shouldStopRunningUsersIfOverLimit = Settings.Global.getInt(
                     mInjector.getContext().getContentResolver(),
                     Settings.Global.RUNNING_USERS_LIMIT_ENABLED, 1) == 1;
 
-            synchronized (mLock) {
-                int count = 0;
-                for (Integer userId : mUserLru) {
-                    count++;
-                    Slog.i(TAG, "mUserLru[" + count + "]: " + userId);
-                }
-
-                if (shouldCheckAndStopUsersOverLimit) {
-                    Slog.i(TAG, "shouldCheckAndStopUsersOverLimit true");
+            if (shouldStopRunningUsersIfOverLimit) {
+                synchronized (mLock) {
                     stopRunningUsersLU(mMaxRunningUsers);
-                } else {
-                    Slog.i(TAG, "shouldCheckAndStopUsersOverLimit false");
                 }
             }
         });
@@ -310,7 +301,6 @@ class UserController implements Handler.Callback {
     List<Integer> getRunningUsersLU() {
         ArrayList<Integer> runningUsers = new ArrayList<>();
         for (Integer userId : mUserLru) {
-            
             UserState uss = mStartedUsers.get(userId);
             if (uss == null) {
                 // Shouldn't happen, but be sane if it does.
