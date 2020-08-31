@@ -293,6 +293,8 @@ class UserController implements Handler.Callback {
                 synchronized (mLock) {
                     stopRunningUsersLU(mMaxRunningUsers);
                 }
+            } else {
+                Slog.d(TAG, "Not checking if number of running users is over the limit");
             }
         });
     }
