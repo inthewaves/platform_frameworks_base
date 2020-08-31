@@ -261,6 +261,7 @@ public class Vpn {
     @VisibleForTesting
     protected void updateState(DetailedState detailedState, String reason) {
         if (LOGD) Log.d(TAG, "setting state=" + detailedState + ", reason=" + reason);
+        Log.d(TAG, "setting state=" + detailedState + ", reason=" + reason);
         mNetworkInfo.setDetailedState(detailedState, reason, null);
         if (mNetworkAgent != null) {
             mNetworkAgent.sendNetworkInfo(mNetworkInfo);
@@ -364,14 +365,31 @@ public class Vpn {
      * @param lockdown whether to prevent all traffic outside of a VPN.
      */
     public synchronized void setLockdown(boolean lockdown) {
+        setLockdown(lockdown, false);
+    }
+
+    /**
+     * Does the same as {@link #setLockdown(boolean)}, but allow for prevention of saving the
+     * always-on state. When users are stopped, setLockdown(false) is called; we need to provide
+     * a way to not call setAlwaysOnPackage for that case (GrapheneOS/os_issue_tracker#213).
+     *
+     * @param lockdown whether to prevent all traffic outside of a VPN.
+     * @param forceNoSavedState whether to force not saving the always-on state.
+     */
+    private synchronized void setLockdown(boolean lockdown, boolean forceNoSavedState) {
         enforceControlPermissionOrInternalCaller();
 
         setVpnForcedLocked(lockdown);
         mLockdown = lockdown;
 
+        Log.d(TAG, "VPN DEBUG: SETLOCKDOWN: mLockdown = " + lockdown);
+        Log.d(TAG, "VPN DEBUG: SETLOCKDOWN: mAlwaysOn = " + mAlwaysOn);
+        Log.d(TAG, "VPN DEBUG: SETLOCKDOWN: forceNoSavedState = " + forceNoSavedState);
+
         // Update app lockdown setting if it changed. Legacy VPN lockdown status is controlled by
         // LockdownVpnTracker.isEnabled() which keeps track of its own state.
-        if (mAlwaysOn) {
+        if (mAlwaysOn && !forceNoSavedState) {
+            Log.d(TAG, "VPN DEBUG: SETLOCKDOWN: saveAlwaysOnPackage");
             saveAlwaysOnPackage();
         }
     }
@@ -510,10 +528,16 @@ public class Vpn {
             mAlwaysOn = false;
         }
 
+        Log.d(TAG, "VPN DEBUG: mLockdown = (mAlwaysOn && lockdown): (" + mAlwaysOn + " && " + lockdown + ")");
+
         mLockdown = (mAlwaysOn && lockdown);
         mLockdownWhitelist = (mLockdown && lockdownWhitelist != null)
                 ? Collections.unmodifiableList(new ArrayList<>(lockdownWhitelist))
                 : Collections.emptyList();
+        Log.d(TAG, "VPN DEBUG: setAlwaysOnPackageInternal: Wrote to mLockdownWhitelist, which contains ");
+        for (int i = 0; i < mLockdownWhitelist.size(); i++) {
+            Log.d(TAG, "VPN DEBUG: mLockdownWhitelist(" + i + "): " + mLockdownWhitelist.get(i));
+        }
 
         if (isCurrentPreparedPackage(packageName)) {
             updateAlwaysOnNotification(mNetworkInfo.getDetailedState());
@@ -556,8 +580,13 @@ public class Vpn {
         try {
             mSystemServices.settingsSecurePutStringForUser(Settings.Secure.ALWAYS_ON_VPN_APP,
                     getAlwaysOnPackage(), mUserHandle);
+            Log.d(TAG, "VPN DEBUG: saveAlwaysOnPackage() I AM PUTTING IN FOR LOCKDOWN: " + (mAlwaysOn && mLockdown ? 1 : 0));
             mSystemServices.settingsSecurePutIntForUser(Settings.Secure.ALWAYS_ON_VPN_LOCKDOWN,
                     (mAlwaysOn && mLockdown ? 1 : 0), mUserHandle);
+            Log.d(TAG, "VPN DEBUG: saveAlwaysOnPackage: SAVING mLockdownWhitelist, which contains ");
+            for (int i = 0; i < mLockdownWhitelist.size(); i++) {
+                Log.d(TAG, "VPN DEBUG: mLockdownWhitelist(" + i + "): " + mLockdownWhitelist.get(i));
+            }
             mSystemServices.settingsSecurePutStringForUser(
                     Settings.Secure.ALWAYS_ON_VPN_LOCKDOWN_WHITELIST,
                     String.join(",", mLockdownWhitelist), mUserHandle);
@@ -1016,9 +1045,11 @@ public class Vpn {
     private void agentDisconnect() {
         if (mNetworkInfo.isConnected()) {
             mNetworkInfo.setIsAvailable(false);
+            Log.d(TAG, "VPN DEBUG: agentDisconnect is calling updateState");
             updateState(DetailedState.DISCONNECTED, "agentDisconnect");
             mNetworkAgent = null;
         }
+        Log.d(TAG, "VPN DEBUG: agentDisconnect is done");
     }
 
     /**
@@ -1330,7 +1361,10 @@ public class Vpn {
      */
     public synchronized void onUserStopped() {
         // Switch off networking lockdown (if it was enabled)
-        setLockdown(false);
+        Log.d(TAG, "VPN DEBUG: onUserStopped: entered");
+
+        setLockdown(false, true);
+        Log.d(TAG, "VPN DEBUG: onUserStopped() called and lockdown set to false., now calling agentDisconnect");
         mAlwaysOn = false;
 
         // Quit any active connections
