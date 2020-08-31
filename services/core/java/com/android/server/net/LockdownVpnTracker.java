@@ -224,7 +224,6 @@ public class LockdownVpnTracker {
 
         mVpn.stopLegacyVpnPrivileged();
         mVpn.setLockdown(false);
-        Slog.d(TAG, "VPN DEBUG: shutdownLocked() called mVpn.setLockdown(false)");
         hideNotification();
 
         mContext.unregisterReceiver(mResetReceiver);

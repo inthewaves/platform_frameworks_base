@@ -4830,12 +4830,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
     private void onUserRemoved(int userId) {
         mPermissionMonitor.onUserRemoved(userId);
         Network defaultNetwork = getNetwork(getDefaultNetwork());
-        Slog.wtf(TAG, "VPN DEBUG: onUserRemoved()");
         synchronized (mVpns) {
             final int vpnsSize = mVpns.size();
             for (int i = 0; i < vpnsSize; i++) {
                 Vpn vpn = mVpns.valueAt(i);
-                Slog.wtf(TAG, "VPN DEBUG: vpn.onUserRemoved(" + userId + ");");
                 vpn.onUserRemoved(userId);
                 NetworkCapabilities nc = vpn.updateCapabilities(defaultNetwork);
                 updateVpnCapabilities(vpn, nc);
