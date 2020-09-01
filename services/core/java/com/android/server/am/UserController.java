@@ -436,13 +436,19 @@ class UserController implements Handler.Callback {
         final int userId = uss.mHandle.getIdentifier();
         Slog.d(TAG, "UserController event: finishUserUnlocking(" + userId + ")");
         // Only keep marching forward if user is actually unlocked
-        if (!StorageManager.isUserKeyUnlocked(userId)) return false;
+        if (!StorageManager.isUserKeyUnlocked(userId)) {
+            Slog.d(TAG, "DEBUG: finishUserUnlocking: isUserKeyUnlocked for " + userId + " is false!");
+            return false;
+        }
         synchronized (mLock) {
             // Do not proceed if unexpected state or a stale user
             if (mStartedUsers.get(userId) != uss || uss.state != STATE_RUNNING_LOCKED) {
+                Slog.d(TAG, "DEBUG: finishUserUnlocking: unexpected state or a stale user");
                 return false;
             }
         }
+
+        Slog.d(TAG, "DEBUG: finishUserUnlocking: mUnlockProgress started, setting \"Phone is starting\" string");
         uss.mUnlockProgress.start();
 
         // Prepare app storage before we go any further
@@ -451,6 +457,7 @@ class UserController implements Handler.Callback {
 
         // Call onBeforeUnlockUser on a worker thread that allows disk I/O
         FgThread.getHandler().post(() -> {
+            Slog.d(TAG, "DEBUG: onBeforeUnlockUser");
             if (!StorageManager.isUserKeyUnlocked(userId)) {
                 Slog.w(TAG, "User key got locked unexpectedly, leaving user locked.");
                 return;
@@ -459,6 +466,7 @@ class UserController implements Handler.Callback {
             synchronized (mLock) {
                 // Do not proceed if unexpected state
                 if (!uss.setState(STATE_RUNNING_LOCKED, STATE_RUNNING_UNLOCKING)) {
+                    Slog.d(TAG, "DEBUG: finishUserUnlocking: Unexpected state!");
                     return;
                 }
             }
@@ -493,6 +501,7 @@ class UserController implements Handler.Callback {
         }
         mInjector.getUserManagerInternal().setUserState(userId, uss.state);
         uss.mUnlockProgress.finish();
+        Slog.d(TAG, "DEBUG: finishUserUnlocked: mUnlockProgress is finished");
 
         // Get unaware persistent apps running and start any unaware providers
         // in already-running apps that are partially aware
@@ -669,9 +678,11 @@ class UserController implements Handler.Callback {
                     @Override
                     public void keyEvicted(@UserIdInt int userId) {
                         // Post to the same handler that this callback is called from to ensure the user
-                        // cleanup is complete before restarting.
+                        // cleanup is complete before restarting. Start it up and bring it to the
+                        // foreground!
                         Slog.d(TAG, "DEBUG: System user key evicted; starting up again.");
-                        mHandler.post(() -> UserController.this.startUser(userId, false));
+                        // TODO: Try a switchUser here?
+                        mHandler.post(() -> UserController.this.startUser(userId, true));
                     }
                 };
             }
@@ -1407,11 +1418,7 @@ class UserController implements Handler.Callback {
         UserInfo targetUserInfo = getUserInfo(targetUserId);
         if (targetUserId == currentUserId) {
             Slog.i(TAG, "user #" + targetUserId + " is already the current user");
-            if (currentUserId != UserHandle.USER_SYSTEM) {
-                return true;
-            } else {
-                Slog.d(TAG, "will try switch to the system user anyway");
-            }
+            return true;
         }
         if (targetUserInfo == null) {
             Slog.w(TAG, "No user info for user #" + targetUserId);
@@ -1432,13 +1439,16 @@ class UserController implements Handler.Callback {
             UserInfo currentUserInfo = getUserInfo(currentUserId);
             Pair<UserInfo, UserInfo> userNames = new Pair<>(currentUserInfo, targetUserInfo);
             mUiHandler.removeMessages(START_USER_SWITCH_UI_MSG);
+            Slog.w(TAG, "DEBUG: switchUser is sending message");
             mUiHandler.sendMessage(mHandler.obtainMessage(
                     START_USER_SWITCH_UI_MSG, userNames));
         } else {
+            Slog.w(TAG, "DEBUG: mUserSwitchUiEnabled is false");
             mHandler.removeMessages(START_USER_SWITCH_FG_MSG);
             mHandler.sendMessage(mHandler.obtainMessage(
                     START_USER_SWITCH_FG_MSG, targetUserId, 0));
         }
+        Slog.w(TAG, "DEBUG: switchUser is done");
         return true;
     }
 
