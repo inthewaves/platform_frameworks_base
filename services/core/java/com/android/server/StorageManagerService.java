@@ -2817,18 +2817,11 @@ class StorageManagerService extends IStorageManager.Stub
         enforcePermission(android.Manifest.permission.STORAGE_INTERNAL);
 
         try {
-            Slog.d(TAG, "DEBUG: vold is locking user key for userId " + userId);
             mVold.lockUserKey(userId);
-            Slog.d(TAG, "DEBUG: vold has locked key for userId " + userId);
         } catch (Exception e) {
-            Slog.e(TAG, "DEBUG: vold has failed to locked key for userId " + userId);
             Slog.wtf(TAG, e);
-
-            Slog.d(TAG, "DEBUG: isUserKeyUnlocked(" + userId + ") == " + isUserKeyUnlocked(userId));
             return;
         }
-
-        Slog.d(TAG, "DEBUG: isUserKeyUnlocked(" + userId + ") == " + isUserKeyUnlocked(userId));
 
         synchronized (mLock) {
             mLocalUnlockedUsers = ArrayUtils.removeInt(mLocalUnlockedUsers, userId);

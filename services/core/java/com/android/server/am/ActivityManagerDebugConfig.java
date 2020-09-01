@@ -51,7 +51,7 @@ class ActivityManagerDebugConfig {
     static final boolean DEBUG_BROADCAST_DEFERRAL = DEBUG_BROADCAST || false;
     static final boolean DEBUG_COMPACTION = DEBUG_ALL || false;
     static final boolean DEBUG_LRU = DEBUG_ALL || false;
-    static final boolean DEBUG_MU = DEBUG_ALL || true;
+    static final boolean DEBUG_MU = DEBUG_ALL || false;
     static final boolean DEBUG_NETWORK = DEBUG_ALL || false;
     static final boolean DEBUG_OOM_ADJ = DEBUG_ALL || false;
     static final boolean DEBUG_OOM_ADJ_REASON = DEBUG_ALL || false;

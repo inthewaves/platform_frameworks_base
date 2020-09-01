@@ -389,11 +389,8 @@ public class GlobalActionsDialog implements DialogInterface.OnDismissListener,
             } else if (GLOBAL_ACTION_KEY_SCREENSHOT.equals(actionKey)) {
                 mItems.add(new ScreenshotAction());
             } else if (GLOBAL_ACTION_KEY_LOGOUT.equals(actionKey)) {
-                // if (mDevicePolicyManager.isLogoutEnabled()
-                //         && getCurrentUser().id != UserHandle.USER_SYSTEM) {
                     mItems.add(new LogoutAction());
                     mHasLogoutButton = true;
-                // }
             } else if (GLOBAL_ACTION_KEY_EMERGENCY.equals(actionKey)) {
                 if (!mEmergencyAffordanceManager.needsEmergencyAffordance()) {
                     mItems.add(new EmergencyDialerAction());
