@@ -17574,11 +17574,6 @@ public class ActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
-    public boolean switchUserAndStopPrevious(final int targetUserId) {
-        return mUserController.switchUser(targetUserId, true);
-    }
-
-    @Override
     public int stopUser(final int userId, boolean force, final IStopUserCallback callback) {
         return mUserController.stopUser(userId, force, callback, null /* keyEvictedCallback */);
     }
@@ -17753,11 +17748,6 @@ public class ActivityManagerService extends IActivityManager.Stub
 
     @VisibleForTesting
     public final class LocalService extends ActivityManagerInternal {
-        @Override
-        public int restartUserAndBringToForeground(final int userId) {
-            return mUserController.restartUser(userId, /* foreground */ true);
-        }
-
         @Override
         public String checkContentProviderAccess(String authority, int userId) {
             return ActivityManagerService.this.checkContentProviderAccess(authority, userId);

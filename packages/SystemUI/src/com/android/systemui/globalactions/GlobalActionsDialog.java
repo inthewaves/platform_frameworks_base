@@ -22,7 +22,6 @@ import static com.android.internal.widget.LockPatternUtils.StrongAuthTracker.STR
 import static com.android.internal.widget.LockPatternUtils.StrongAuthTracker.STRONG_AUTH_REQUIRED_AFTER_USER_LOCKDOWN;
 
 import android.app.ActivityManager;
-import android.app.ActivityManagerInternal;
 import android.app.Dialog;
 import android.app.KeyguardManager;
 import android.app.PendingIntent;
@@ -88,7 +87,6 @@ import com.android.internal.util.ScreenshotHelper;
 import com.android.internal.view.RotationPolicy;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.keyguard.KeyguardUpdateMonitor;
-import com.android.server.LocalServices;
 import com.android.systemui.Dependency;
 import com.android.systemui.Interpolators;
 import com.android.systemui.MultiListLayout;
@@ -147,7 +145,6 @@ public class GlobalActionsDialog implements DialogInterface.OnDismissListener,
     private final DevicePolicyManager mDevicePolicyManager;
     private final LockPatternUtils mLockPatternUtils;
     private final KeyguardManager mKeyguardManager;
-    private final ActivityManagerInternal mActivityManagerInternal;
 
     private ArrayList<Action> mItems;
     private ActionsDialog mDialog;
@@ -185,10 +182,6 @@ public class GlobalActionsDialog implements DialogInterface.OnDismissListener,
                 Context.DEVICE_POLICY_SERVICE);
         mLockPatternUtils = new LockPatternUtils(mContext);
         mKeyguardManager = (KeyguardManager) mContext.getSystemService(Context.KEYGUARD_SERVICE);
-        mActivityManagerInternal = LocalServices.getService(ActivityManagerInternal.class);
-        if (mActivityManagerInternal == null) {
-            Log.d(TAG, "DEBUG: GlobalActionsDialog: mActivityManagerInternal is NULL!!");
-        }
 
         // receive broadcasts
         IntentFilter filter = new IntentFilter();
@@ -727,33 +720,12 @@ public class GlobalActionsDialog implements DialogInterface.OnDismissListener,
         public void onPress() {
             // Add a little delay before executing, to give the dialog a chance to go away before
             // switching user
-
-            if (mActivityManagerInternal == null) {
-                Log.d(TAG, "DEBUG: GlobalActionsDialog: mActivityManagerInternal is NULL!! Trying the other way");
-                final UserManager um = mContext.getSystemService(UserManager.class);
-                mHandler.postDelayed(() -> {
-                    try {
-                        // int currentUserId = getCurrentUser().id;
-
-                        ActivityManager.getService().switchUserAndStopPrevious(UserHandle.USER_SYSTEM);
-                        // um.evictCredentialEncryptionKey(currentUserId);
-                        // ActivityManager.getService().stopUser(currentUserId, true /*force*/, null);
-                    } catch (RemoteException re) {
-                        Log.e(TAG, "Couldn't logout user " + re);
-                    }
-                }, 500);
-
-                return;
-            }
-            Log.d(TAG, "DEBUG: GlobalActionsDialog: mActivityManagerInternal is NOT NULL!! Running restartUserAndBringToForeground");
             mHandler.postDelayed(() -> {
                 try {
                     int currentUserId = getCurrentUser().id;
-                    mActivityManagerInternal.restartUserAndBringToForeground(currentUserId);
-                    //um.evictCredentialEncryptionKey(currentUserId);
-                    //ActivityManager.getService().switchUser(UserHandle.USER_SYSTEM);
-                    //ActivityManager.getService().stopUser(currentUserId, true /*force*/, null);
-                } catch (RuntimeException re) {
+                    ActivityManager.getService().switchUser(UserHandle.USER_SYSTEM);
+                    ActivityManager.getService().stopUser(currentUserId, true /*force*/, null);
+                } catch (RemoteException re) {
                     Log.e(TAG, "Couldn't logout user " + re);
                 }
             }, 500);

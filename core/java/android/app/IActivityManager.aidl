@@ -302,8 +302,6 @@ interface IActivityManager {
     @UnsupportedAppUsage
     boolean switchUser(int userid);
     @UnsupportedAppUsage
-    boolean switchUserAndStopPrevious(int userid);
-    @UnsupportedAppUsage
     boolean removeTask(int taskId);
     @UnsupportedAppUsage
     void registerProcessObserver(in IProcessObserver observer);
