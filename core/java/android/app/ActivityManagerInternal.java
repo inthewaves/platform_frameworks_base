@@ -46,6 +46,8 @@ public abstract class ActivityManagerInternal {
     public static final int ALLOW_NON_FULL_IN_PROFILE = 1;
     public static final int ALLOW_FULL_ONLY = 2;
 
+    public abstract int restartUserAndBringToForeground(final int userId);
+
     /**
      * Verify that calling app has access to the given provider.
      */

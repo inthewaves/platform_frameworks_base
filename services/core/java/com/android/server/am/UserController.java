@@ -181,6 +181,15 @@ class UserController implements Handler.Callback {
     @GuardedBy("mLock")
     private volatile int mTargetUserId = UserHandle.USER_NULL;
 
+    // Whether to stop the previous user during a user switch. If true, previous user is
+    // stopped once target user goes into the foreground. Use mLock when updating
+    @GuardedBy("mLock")
+    private volatile boolean mStopPreviousUserDuringSwitch = false;
+
+    // Holds the previous user after a switch.
+    @GuardedBy("mLock")
+    private volatile int mPreviousUserId = UserHandle.USER_NULL;
+
     /**
      * Which users have been started, so are allowed to run code.
      */
@@ -284,6 +293,30 @@ class UserController implements Handler.Callback {
             finishUserBoot(uss);
             startProfiles();
             synchronized (mLock) {
+                StringBuilder builder = new StringBuilder();
+                for (Integer userId: mUserLru) {
+                    builder.append(userId + ", ");
+                }
+                Slog.d(TAG, "DEBUG: finishUserSwitch: before: mUserLru is " + builder.toString());
+
+                if (mStopPreviousUserDuringSwitch) {
+                    Slog.d(TAG, "stopping previous user");
+                    mStopPreviousUserDuringSwitch = false;
+                    final int result = stopUsersLU(mPreviousUserId, false, null, null);
+                    if (result == USER_OP_SUCCESS) {
+                        Slog.d(TAG, "DEBUG: finishUserSwitch: Stopping previous user got a success");
+                    } else {
+                        Slog.d(TAG, "DEBUG: finishUserSwitch: Stopping previous user got a fail: " + result);
+                    }
+                    mPreviousUserId = UserHandle.USER_NULL;
+                }
+
+                builder = new StringBuilder();
+                for (Integer userId: mUserLru) {
+                    builder.append(userId + ", ");
+                }
+                Slog.d(TAG, "DEBUG: finishUserSwitch: after: mUserLru is " + builder.toString());
+
                 stopRunningUsersLU(mMaxRunningUsers);
             }
         });
@@ -709,6 +742,12 @@ class UserController implements Handler.Callback {
             return USER_OP_IS_CURRENT;
         }
         int[] usersToStop = getUsersToStopLU(userId);
+        StringBuilder stringBuilder = new StringBuilder("usersToStop: ");
+        for (int i = 0; i < usersToStop.length; i++) {
+            stringBuilder.append(usersToStop[i] + ", ");
+        }
+        Slog.d(TAG, "DEBUG: stopUsersLU: for user " + userId + ": " + stringBuilder.toString());
+
         // If one of related users is system or current, no related users should be stopped
         for (int i = 0; i < usersToStop.length; i++) {
             int relatedUserId = usersToStop[i];
@@ -1192,6 +1231,10 @@ class UserController implements Handler.Callback {
                 // Make sure the old user is no longer considering the display to be on.
                 mInjector.reportGlobalUsageEventLocked(UsageEvents.Event.SCREEN_NON_INTERACTIVE);
                 synchronized (mLock) {
+                    if (mStopPreviousUserDuringSwitch) {
+                        Slog.d(TAG, "DEBUG: setting mPreviousUserId to " + mCurrentUserId);
+                        mPreviousUserId = mCurrentUserId;
+                    }
                     mCurrentUserId = userId;
                     mTargetUserId = UserHandle.USER_NULL; // reset, mCurrentUserId has caught up
                 }
@@ -1412,6 +1455,10 @@ class UserController implements Handler.Callback {
     }
 
     boolean switchUser(final int targetUserId) {
+        return switchUser(targetUserId, false);
+    }
+
+    boolean switchUser(final int targetUserId, boolean stopPreviousUserAfterSwitch) {
         enforceShellRestriction(UserManager.DISALLOW_DEBUGGING_FEATURES, targetUserId);
         Slog.i(TAG, "switching to user " + targetUserId);
         int currentUserId = getCurrentUserId();
@@ -1434,6 +1481,8 @@ class UserController implements Handler.Callback {
         }
         synchronized (mLock) {
             mTargetUserId = targetUserId;
+            mStopPreviousUserDuringSwitch = stopPreviousUserAfterSwitch;
+            Slog.d(TAG, "switchUser: mStopPreviousUserDuringSwitch is set to " + mStopPreviousUserDuringSwitch);
         }
         if (mUserSwitchUiEnabled) {
             UserInfo currentUserInfo = getUserInfo(currentUserId);
