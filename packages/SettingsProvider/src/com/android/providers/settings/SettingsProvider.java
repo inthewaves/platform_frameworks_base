@@ -3355,8 +3355,6 @@ public class SettingsProvider extends ContentProvider {
 
                 int currentVersion = oldVersion;
 
-                Slog.d(LOG_TAG, "onUpgradeLocked: userId " + userId + ", oldVersion " + oldVersion + " newVersion " + newVersion);
-
                 // v119: Reset zen + ringer mode.
                 if (currentVersion == 118) {
                     if (userId == UserHandle.USER_SYSTEM) {
