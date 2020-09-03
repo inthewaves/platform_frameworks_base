@@ -638,6 +638,10 @@
     <!-- For tether entitlement recheck-->
     <protected-broadcast
         android:name="com.android.server.connectivity.tethering.PROVISIONING_RECHECK_ALARM" />
+
+    <!-- For switching user -->
+    <protected-broadcast android:name="com.android.server.notification.ACTION_SWITCH_USER" />
+
     <!-- ====================================================================== -->
     <!--                          RUNTIME PERMISSIONS                           -->
     <!-- ====================================================================== -->

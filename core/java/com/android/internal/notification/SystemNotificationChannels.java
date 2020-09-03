@@ -56,6 +56,7 @@ public class SystemNotificationChannels {
     public static String HEAVY_WEIGHT_APP = "HEAVY_WEIGHT_APP";
     public static String SYSTEM_CHANGES = "SYSTEM_CHANGES";
     public static String DO_NOT_DISTURB = "DO_NOT_DISTURB";
+    public static String OTHER_USERS = "OTHER_USERS";
 
     public static void createAll(Context context) {
         final NotificationManager nm = context.getSystemService(NotificationManager.class);
@@ -181,6 +182,12 @@ public class SystemNotificationChannels {
                 context.getString(R.string.notification_channel_do_not_disturb),
                 NotificationManager.IMPORTANCE_LOW);
         channelsList.add(dndChanges);
+
+        NotificationChannel otherUsers = new NotificationChannel(OTHER_USERS,
+                context.getString(R.string.notification_channel_other_users),
+                NotificationManager.IMPORTANCE_DEFAULT);
+        otherUsers.setBlockableSystem(true);
+        channelsList.add(otherUsers);
 
         nm.createNotificationChannels(channelsList);
     }

@@ -5426,4 +5426,6 @@
     <!-- ChooserActivity - Alphabetically sorted apps list label. [CHAR LIMIT=NONE] -->
     <string name="chooser_all_apps_button_label">Apps list</string>
 
+    <!-- Text shown when viewing channel settings for notifications from other users. -->
+    <string name="notification_channel_other_users">Other Users</string>
 </resources>

@@ -19,11 +19,13 @@ package com.android.server.notification;
 import static android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND;
 import static android.app.Notification.CATEGORY_CALL;
 import static android.app.Notification.FLAG_AUTOGROUP_SUMMARY;
+import static android.app.Notification.FLAG_AUTO_CANCEL;
 import static android.app.Notification.FLAG_BUBBLE;
 import static android.app.Notification.FLAG_FOREGROUND_SERVICE;
 import static android.app.Notification.FLAG_NO_CLEAR;
 import static android.app.Notification.FLAG_ONGOING_EVENT;
 import static android.app.Notification.FLAG_ONLY_ALERT_ONCE;
+import static android.app.Notification.VISIBILITY_SECRET;
 import static android.app.NotificationManager.ACTION_APP_BLOCK_STATE_CHANGED;
 import static android.app.NotificationManager.ACTION_NOTIFICATION_CHANNEL_BLOCK_STATE_CHANGED;
 import static android.app.NotificationManager.ACTION_NOTIFICATION_CHANNEL_GROUP_BLOCK_STATE_CHANGED;
@@ -103,6 +105,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.ActivityManager;
 import android.app.ActivityManagerInternal;
+import android.app.ActivityThread;
 import android.app.AlarmManager;
 import android.app.AppGlobals;
 import android.app.AppOpsManager;
@@ -209,6 +212,7 @@ import android.util.Xml;
 import android.util.proto.ProtoOutputStream;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityManager;
+import android.widget.Switch;
 import android.widget.Toast;
 
 import com.android.internal.R;
@@ -278,7 +282,7 @@ import java.util.function.BiConsumer;
 /** {@hide} */
 public class NotificationManagerService extends SystemService {
     static final String TAG = "NotificationService";
-    static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG);
+    static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG) || true;
     public static final boolean ENABLE_CHILD_NOTIFICATIONS
             = SystemProperties.getBoolean("debug.child_notifs", true);
 
@@ -1808,6 +1812,7 @@ public class NotificationManagerService extends SystemService {
         }, mUserProfiles);
 
         final File systemDir = new File(Environment.getDataDirectory(), "system");
+        final Environment e = new Environment();
 
         init(Looper.myLooper(),
                 AppGlobals.getPackageManager(), getContext().getPackageManager(),
@@ -4781,6 +4786,7 @@ public class NotificationManagerService extends SystemService {
         if (DBG) {
             Slog.v(TAG, "enqueueNotificationInternal: pkg=" + pkg + " id=" + id
                     + " notification=" + notification);
+            Slog.v(TAG, "callingUid=" + callingUid + " callingPid=" + callingPid);
         }
 
         if (pkg == null || notification == null) {
@@ -4805,6 +4811,8 @@ public class NotificationManagerService extends SystemService {
         // Can throw a SecurityException if the calling uid doesn't have permission to post
         // as "pkg"
         final int notificationUid = resolveNotificationUid(opPkg, pkg, callingUid, userId);
+
+        Slog.d(TAG, "DEBUG: notificationUid is " + notificationUid);
 
         checkRestrictedCategories(notification);
 
@@ -4913,23 +4921,148 @@ public class NotificationManagerService extends SystemService {
 
         mHandler.post(new EnqueueNotificationRunnable(userId, r));
 
-        if (currentUser != userId && userId != UserHandle.USER_ALL) {
-            Slog.wtf(TAG, "DEBUG: ATTEMPTING TO REPLICATION NOTIFICATION");
-            Notification notificationStrippedIntents = notification.clone();
+        if (currentUser != userId && userId != UserHandle.USER_ALL
+                && !notification.isForegroundService()
+                && notification.visibility != VISIBILITY_SECRET) {
+            Slog.wtf(TAG, "DEBUG: ATTEMPTING TO REPLICATE NOTIFICATION INTENDED FOR " + userId + " INTO CURRENT USER " + currentUser);
 
             final long token1 = Binder.clearCallingIdentity();
             try {
-                //enqueueNotificationInternal(pkg, opPkg, Process.SYSTEM_UID, Binder.getCallingPid(), tag, id, notificationStrippedIntents,
-                 //       currentUser);
+                if (mUm.isSameProfileGroup(currentUser, userId)) {
+                    Slog.wtf(TAG, "DEBUG: NOT REPLICATING: THE CURRENT USER IS A WORK PROFILE OR SIMILAR");
+                    return;
+                }
+
+                Notification notificationStrippedIntents = notification.clone();
+                // Let the notification be dismissable.
+                notificationStrippedIntents.flags &= ~(FLAG_NO_CLEAR | FLAG_ONGOING_EVENT);
+                notificationStrippedIntents.flags |= (FLAG_AUTO_CANCEL);
+
+
+                final Intent intent = new Intent(SwitchUserReceiver.SWITCH_ACTION)
+                        .setClass(getContext(), SwitchUserReceiver.class)
+                        .putExtra(SwitchUserReceiver.USERID_TO_SWITCH_TO_EXTRA, userId)
+                        .setPackage(getContext().getPackageName());
+
+                final Intent intent2 = new Intent(SwitchUserReceiver.SWITCH_ACTION)
+                        .setClass(getContext(), SwitchUserReceiver.class)
+                        .putExtra(SwitchUserReceiver.USERID_TO_SWITCH_TO_EXTRA, userId)
+                        .setPackage(getContext().getPackageName());
+
+                PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
+                        intent, 0);
+                PendingIntent pendingIntentSwitchUser2 = PendingIntent.getBroadcast(getContext(), 0,
+                        intent2, 0);
+
+                IntentFilter filter = new IntentFilter();
+                filter.addAction(SwitchUserReceiver.SWITCH_ACTION);
+                getContext().registerReceiver(mSwitchUserReceiver, filter);
+
+                final Notification censoredNotif =
+                        new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
+                                .setSmallIcon(R.drawable.stat_sys_adb)
+                                .addAction(new Notification.Action.Builder(null /* icon */,
+                                        "Switch to user",
+                                        pendingIntentSwitchUser).build())
+                                .setAutoCancel(true)
+                                //.setWhen(notification.getTimeoutAfter())
+                                .setOngoing(false)
+                                .setFlag(notification.flags, true)
+                                .setTicker("Open the profile to see!")
+                                .setColor(getContext().getColor(
+                                        com.android.internal.R.color.system_notification_accent_color))
+                                .setContentTitle("Notification from different user")
+                                .setContentText("Click to open user")
+                                .setSmallIcon(notification.getSmallIcon())
+                                .setVisibility(Notification.VISIBILITY_PRIVATE)
+                                .build();
+
+                notificationStrippedIntents.actions = new Notification.Action[1];
+                notificationStrippedIntents.actions[0] = new Notification.Action.Builder(
+                        null /* icon */,
+                        "Switch to user",
+                        pendingIntentSwitchUser2).build();
+
+                enqueueNotificationInternal(getContext().getPackageName(),
+                        getContext().getPackageName(), Binder.getCallingUid(),
+                        Binder.getCallingPid(), tag, id, censoredNotif, currentUser);
+
+                //enqueueNotificationInternal(getContext().getPackageName(),
+                //        getContext().getPackageName(), Binder.getCallingUid(),
+                //        Binder.getCallingPid(), tag, id, notificationStrippedIntents, currentUser);
+
+                // Can just create the notification. All the rate limiting checks, etc. were already
+                // done beforehand.
+
+                Slog.wtf(TAG, "DEBUG: ATTEMTPING SECOND MESSAGE");
+
+                final NotificationChannel sysChannel = mPreferencesHelper.getNotificationChannel(
+                        getContext().getPackageName(), Process.SYSTEM_UID, SystemNotificationChannels.OTHER_USERS,
+                        false /* includeDeleted */);
+
+                // Sets the app notification, but has a bunch of package errors because a package
+                // might not be installed in the currentUser's side.
                 final StatusBarNotification n1 = new StatusBarNotification(
-                        pkg, opPkg, id, tag, notificationUid, Binder.getCallingPid(), notificationStrippedIntents,
+                        pkg, getContext().getPackageName(), id, tag, notificationUid, Binder.getCallingPid(), notificationStrippedIntents,
                         UserHandle.of(currentUser), null, System.currentTimeMillis());
-                final NotificationRecord r1 = new NotificationRecord(getContext(), n1, channel);
+                final NotificationRecord r1 = new NotificationRecord(getContext(), n1, sysChannel);
                 r1.setIsAppImportanceLocked(mPreferencesHelper.getIsAppImportanceLocked(pkg, callingUid));
 
                 mHandler.post(new EnqueueNotificationRunnable(currentUser, r1));
+
+
             } finally {
                 Binder.restoreCallingIdentity(token1);
+            }
+        }
+    }
+
+    private final BroadcastReceiver mSwitchUserReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Slog.d(TAG, "DEBUG: SwitchUserReceiver receieve");
+            if (!"com.android.server.notification.ACTION_SWITCH_USER".equals(intent.getAction())) {
+                Slog.d(TAG, "DEBUG: SwitchUserReceiver failed");
+                return;
+            }
+
+            final int userIdToSwitchTo = intent.getIntExtra("userid", -1);
+            Slog.d(TAG, "DEBUG: SwitchUserReceiver userIdToSwitchTo " + userIdToSwitchTo);
+            if (userIdToSwitchTo >= 0) {
+                try {
+                    Slog.d(TAG, "DEBUG: SwitchUserReceiver trying switch");
+                    ActivityManager.getService().switchUser(userIdToSwitchTo);
+                } catch (RemoteException re) {
+                    Slog.d(TAG, "DEBUG: SwitchUserReceiver failed exception");
+                    // Do nothing
+                }
+            }
+        }
+    };
+
+    private static class SwitchUserReceiver extends BroadcastReceiver {
+        public static final String SWITCH_ACTION =
+                "com.android.server.notification.ACTION_SWITCH_USER";
+        public static final String USERID_TO_SWITCH_TO_EXTRA = "userid";
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Slog.d(TAG, "DEBUG: SwitchUserReceiver receieve");
+            if (!SWITCH_ACTION.equals(intent.getAction())) {
+                Slog.d(TAG, "DEBUG: SwitchUserReceiver failed");
+                return;
+            }
+
+            final int userIdToSwitchTo = intent.getIntExtra(USERID_TO_SWITCH_TO_EXTRA, -1);
+            Slog.d(TAG, "DEBUG: SwitchUserReceiver userIdToSwitchTo " + userIdToSwitchTo);
+            if (userIdToSwitchTo >= 0) {
+                try {
+                    Slog.d(TAG, "DEBUG: SwitchUserReceiver trying switch");
+                    ActivityManager.getService().switchUser(userIdToSwitchTo);
+                } catch (RemoteException re) {
+                    Slog.d(TAG, "DEBUG: SwitchUserReceiver failed exception");
+                    // Do nothing
+                }
             }
         }
     }
