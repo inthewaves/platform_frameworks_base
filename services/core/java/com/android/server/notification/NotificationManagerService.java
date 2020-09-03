@@ -4921,9 +4921,19 @@ public class NotificationManagerService extends SystemService {
 
         mHandler.post(new EnqueueNotificationRunnable(userId, r));
 
+        Slog.d(TAG, "The notification is " + notification.toString());
+        Slog.d(TAG, "The notification record is " + r.toString());
+
+        Slog.d(TAG, "currentUser != userId: " + (currentUser != userId));
+        Slog.d(TAG, "!notification.isForegroundService() " + (!notification.isForegroundService()));
+        Slog.d(TAG, "notification.visibility != VISIBILITY_SECRET " + (notification.visibility != VISIBILITY_SECRET));
+        Slog.d(TAG, "r.getImportance() > IMPORTANCE_MIN " + (r.getImportance() > IMPORTANCE_MIN));
+        Slog.d(TAG, "r.getImportance() > IMPORTANCE_MIN " + (r.getImportance() > IMPORTANCE_MIN));
+
+        Slog.d(TAG, "channel is " + channel.toString());
+
         if (currentUser != userId && userId != UserHandle.USER_ALL
-                && !notification.isForegroundService()
-                && notification.visibility != VISIBILITY_SECRET) {
+                && showNotificationOnKeyguardForUser(userId, channel)) {
             Slog.wtf(TAG, "DEBUG: ATTEMPTING TO REPLICATE NOTIFICATION INTENDED FOR " + userId + " INTO CURRENT USER " + currentUser);
 
             final long token1 = Binder.clearCallingIdentity();
@@ -4940,23 +4950,42 @@ public class NotificationManagerService extends SystemService {
 
 
                 final Intent intent = new Intent(SwitchUserReceiver.SWITCH_ACTION)
-                        .setClass(getContext(), SwitchUserReceiver.class)
+                        // .setClass(getContext(), SwitchUserReceiver.class)
                         .putExtra(SwitchUserReceiver.USERID_TO_SWITCH_TO_EXTRA, userId)
                         .setPackage(getContext().getPackageName());
 
-                final Intent intent2 = new Intent(SwitchUserReceiver.SWITCH_ACTION)
-                        .setClass(getContext(), SwitchUserReceiver.class)
-                        .putExtra(SwitchUserReceiver.USERID_TO_SWITCH_TO_EXTRA, userId)
-                        .setPackage(getContext().getPackageName());
+                //final Intent intent2 = new Intent(SwitchUserReceiver.SWITCH_ACTION)
+                //        .setClass(getContext(), SwitchUserReceiver.class)
+                //        .putExtra(SwitchUserReceiver.USERID_TO_SWITCH_TO_EXTRA, userId)
+                //        .setPackage(getContext().getPackageName());
 
                 PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
-                        intent, 0);
-                PendingIntent pendingIntentSwitchUser2 = PendingIntent.getBroadcast(getContext(), 0,
-                        intent2, 0);
+                        intent, PendingIntent.FLAG_CANCEL_CURRENT);
+                //PendingIntent pendingIntentSwitchUser2 = PendingIntent.getBroadcast(getContext(), 0,
+                //        intent2, 0);
 
                 IntentFilter filter = new IntentFilter();
                 filter.addAction(SwitchUserReceiver.SWITCH_ACTION);
                 getContext().registerReceiver(mSwitchUserReceiver, filter);
+
+                final String username = mUm.getUserInfo(userId).name;
+
+                final PackageManager pmUser = getPackageManagerForUser(getContext(), userId);
+
+                String appname = null;
+                try {
+                    final ApplicationInfo info = pmUser.getApplicationInfo(pkg,
+                            PackageManager.MATCH_UNINSTALLED_PACKAGES
+                                    | PackageManager.MATCH_DISABLED_COMPONENTS);
+                    if (info != null) {
+                        appname = String.valueOf(pmUser.getApplicationLabel(info));
+                    }
+                } catch (PackageManager.NameNotFoundException e) {
+                    // Nothing
+                }
+
+                final String title = appname == null ? "Notification for " + username
+                        : "Notification from " + appname + " for " + username;
 
                 final Notification censoredNotif =
                         new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
@@ -4968,25 +4997,24 @@ public class NotificationManagerService extends SystemService {
                                 //.setWhen(notification.getTimeoutAfter())
                                 .setOngoing(false)
                                 .setFlag(notification.flags, true)
-                                .setTicker("Open the profile to see!")
-                                .setColor(getContext().getColor(
-                                        com.android.internal.R.color.system_notification_accent_color))
-                                .setContentTitle("Notification from different user")
-                                .setContentText("Click to open user")
+                                .setTicker("Tap to open user.")
+                                .setColor(notification.color)
+                                .setContentTitle(title)
+                                .setContentText("Tap to open user.")
                                 .setSmallIcon(notification.getSmallIcon())
                                 .setVisibility(Notification.VISIBILITY_PRIVATE)
+                                .setGroup("USER_GROUP_" + userId)
                                 .build();
 
-                notificationStrippedIntents.actions = new Notification.Action[1];
-                notificationStrippedIntents.actions[0] = new Notification.Action.Builder(
-                        null /* icon */,
-                        "Switch to user",
-                        pendingIntentSwitchUser2).build();
+                //notificationStrippedIntents.actions = new Notification.Action[1];
+                //notificationStrippedIntents.actions[0] = new Notification.Action.Builder(
+                //        null /* icon */,
+                //        "Switch to user",
+                //        pendingIntentSwitchUser2).build();
 
                 enqueueNotificationInternal(getContext().getPackageName(),
                         getContext().getPackageName(), Binder.getCallingUid(),
                         Binder.getCallingPid(), tag, id, censoredNotif, currentUser);
-
                 //enqueueNotificationInternal(getContext().getPackageName(),
                 //        getContext().getPackageName(), Binder.getCallingUid(),
                 //        Binder.getCallingPid(), tag, id, notificationStrippedIntents, currentUser);
@@ -4998,23 +5026,71 @@ public class NotificationManagerService extends SystemService {
 
                 final NotificationChannel sysChannel = mPreferencesHelper.getNotificationChannel(
                         getContext().getPackageName(), Process.SYSTEM_UID, SystemNotificationChannels.OTHER_USERS,
-                        false /* includeDeleted */);
+                        false);
 
                 // Sets the app notification, but has a bunch of package errors because a package
                 // might not be installed in the currentUser's side.
+                /*
                 final StatusBarNotification n1 = new StatusBarNotification(
-                        pkg, getContext().getPackageName(), id, tag, notificationUid, Binder.getCallingPid(), notificationStrippedIntents,
-                        UserHandle.of(currentUser), null, System.currentTimeMillis());
-                final NotificationRecord r1 = new NotificationRecord(getContext(), n1, sysChannel);
+                        getContext().getPackageName(), getContext().getPackageName(), id, tag, notificationUid, Binder.getCallingPid(), notificationStrippedIntents,
+                        UserHandle.of(currentUser), null, n.getPostTime());
+                final NotificationRecord r1 = new NotificationRecord(getContext(), n1, channel);
+
                 r1.setIsAppImportanceLocked(mPreferencesHelper.getIsAppImportanceLocked(pkg, callingUid));
 
                 mHandler.post(new EnqueueNotificationRunnable(currentUser, r1));
+                */
 
-
+                Slog.d(TAG, "DEBUG: sysChannel.getImportance(): " + sysChannel.getImportance());
+                Slog.d(TAG, "DEBUG: channel.getImportance(): " + channel.getImportance());
             } finally {
                 Binder.restoreCallingIdentity(token1);
             }
         }
+    }
+
+    private boolean showNotificationOnKeyguardForUser(int userId, NotificationChannel channel) {
+        if (channel.getLockscreenVisibility() == VISIBILITY_SECRET
+            || channel.getImportance() == IMPORTANCE_MIN) {
+            return false;
+        }
+
+        final boolean showByUser = Settings.Secure.getIntForUser(
+                getContext().getContentResolver(),
+                Settings.Secure.LOCK_SCREEN_SHOW_NOTIFICATIONS, 0, userId) != 0;
+        if (!showByUser) {
+            return false;
+        }
+
+        if (channel.getImportance() == IMPORTANCE_LOW) {
+            return Settings.Secure.getIntForUser(
+                    getContext().getContentResolver(),
+                    Settings.Secure.LOCK_SCREEN_SHOW_SILENT_NOTIFICATIONS, 1, userId) != 0;
+        }
+
+        return true;
+    }
+
+    /**
+     * @return a PackageManger for userId or if userId is < 0 (USER_ALL etc) then
+     *         return PackageManager for mContext
+     */
+    private PackageManager getPackageManagerForUser(Context context, int userId) {
+        Context contextForUser = context;
+        // UserHandle defines special userId as negative values, e.g. USER_ALL
+        if (userId >= 0) {
+            try {
+                // Create a context for the correct user so if a package isn't installed
+                // for user 0 we can still load information about the package.
+                contextForUser =
+                        context.createPackageContextAsUser(context.getPackageName(),
+                                Context.CONTEXT_RESTRICTED,
+                                new UserHandle(userId));
+            } catch (NameNotFoundException e) {
+                // Shouldn't fail to find the package name
+            }
+        }
+        return contextForUser.getPackageManager();
     }
 
     private final BroadcastReceiver mSwitchUserReceiver = new BroadcastReceiver() {
