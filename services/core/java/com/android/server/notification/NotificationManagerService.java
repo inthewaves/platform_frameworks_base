@@ -105,7 +105,6 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.ActivityManager;
 import android.app.ActivityManagerInternal;
-import android.app.ActivityThread;
 import android.app.AlarmManager;
 import android.app.AppGlobals;
 import android.app.AppOpsManager;
@@ -212,7 +211,6 @@ import android.util.Xml;
 import android.util.proto.ProtoOutputStream;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityManager;
-import android.widget.Switch;
 import android.widget.Toast;
 
 import com.android.internal.R;
@@ -360,6 +358,10 @@ public class NotificationManagerService extends SystemService {
     private static final int REQUEST_CODE_TIMEOUT = 1;
     private static final String SCHEME_TIMEOUT = "timeout";
     private static final String EXTRA_KEY = "key";
+
+    private static final String ACTION_SWITCH_USER =
+            NotificationManagerService.class.getSimpleName() + ".SWITCH_USER";
+    public static final String EXTRA_SWITCH_USER_USERID = "userid";
 
     private IActivityManager mAm;
     private ActivityManager mActivityManager;
@@ -1387,6 +1389,29 @@ public class NotificationManagerService extends SystemService {
         }
     };
 
+    private final BroadcastReceiver mSwitchUserReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Slog.d(TAG, "DEBUG: SwitchUserReceiver receieve");
+            if (!ACTION_SWITCH_USER.equals(intent.getAction())) {
+                Slog.d(TAG, "DEBUG: SwitchUserReceiver failed");
+                return;
+            }
+
+            final int userIdToSwitchTo = intent.getIntExtra(EXTRA_SWITCH_USER_USERID, -1);
+            Slog.d(TAG, "DEBUG: SwitchUserReceiver userIdToSwitchTo " + userIdToSwitchTo);
+            if (userIdToSwitchTo >= 0) {
+                try {
+                    Slog.d(TAG, "DEBUG: SwitchUserReceiver trying switch");
+                    ActivityManager.getService().switchUser(userIdToSwitchTo);
+                } catch (RemoteException re) {
+                    Slog.d(TAG, "DEBUG: SwitchUserReceiver failed exception");
+                    // Do nothing
+                }
+            }
+        }
+    };
+
     private final class SettingsObserver extends ContentObserver {
         private final Uri NOTIFICATION_BADGING_URI
                 = Settings.Secure.getUriFor(Settings.Secure.NOTIFICATION_BADGING);
@@ -1877,6 +1902,9 @@ public class NotificationManagerService extends SystemService {
 
         IntentFilter localeChangedFilter = new IntentFilter(Intent.ACTION_LOCALE_CHANGED);
         getContext().registerReceiver(mLocaleChangeReceiver, localeChangedFilter);
+
+        IntentFilter switchUserFilter = new IntentFilter(ACTION_SWITCH_USER);
+        getContext().registerReceiver(mSwitchUserReceiver, switchUserFilter);
 
         publishBinderService(Context.NOTIFICATION_SERVICE, mService, /* allowIsolated= */ false,
                 DUMP_FLAG_PRIORITY_CRITICAL | DUMP_FLAG_PRIORITY_NORMAL);
@@ -4928,8 +4956,6 @@ public class NotificationManagerService extends SystemService {
         Slog.d(TAG, "!notification.isForegroundService() " + (!notification.isForegroundService()));
         Slog.d(TAG, "notification.visibility != VISIBILITY_SECRET " + (notification.visibility != VISIBILITY_SECRET));
         Slog.d(TAG, "r.getImportance() > IMPORTANCE_MIN " + (r.getImportance() > IMPORTANCE_MIN));
-        Slog.d(TAG, "r.getImportance() > IMPORTANCE_MIN " + (r.getImportance() > IMPORTANCE_MIN));
-
         Slog.d(TAG, "channel is " + channel.toString());
 
         if (currentUser != userId && userId != UserHandle.USER_ALL
@@ -4943,30 +4969,12 @@ public class NotificationManagerService extends SystemService {
                     return;
                 }
 
-                Notification notificationStrippedIntents = notification.clone();
-                // Let the notification be dismissable.
-                notificationStrippedIntents.flags &= ~(FLAG_NO_CLEAR | FLAG_ONGOING_EVENT);
-                notificationStrippedIntents.flags |= (FLAG_AUTO_CANCEL);
-
-
-                final Intent intent = new Intent(SwitchUserReceiver.SWITCH_ACTION)
-                        // .setClass(getContext(), SwitchUserReceiver.class)
-                        .putExtra(SwitchUserReceiver.USERID_TO_SWITCH_TO_EXTRA, userId)
+                final Intent intent = new Intent(ACTION_SWITCH_USER)
+                        .putExtra(EXTRA_SWITCH_USER_USERID, userId)
                         .setPackage(getContext().getPackageName());
 
-                //final Intent intent2 = new Intent(SwitchUserReceiver.SWITCH_ACTION)
-                //        .setClass(getContext(), SwitchUserReceiver.class)
-                //        .putExtra(SwitchUserReceiver.USERID_TO_SWITCH_TO_EXTRA, userId)
-                //        .setPackage(getContext().getPackageName());
-
                 PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
-                        intent, PendingIntent.FLAG_CANCEL_CURRENT);
-                //PendingIntent pendingIntentSwitchUser2 = PendingIntent.getBroadcast(getContext(), 0,
-                //        intent2, 0);
-
-                IntentFilter filter = new IntentFilter();
-                filter.addAction(SwitchUserReceiver.SWITCH_ACTION);
-                getContext().registerReceiver(mSwitchUserReceiver, filter);
+                        intent, 0);
 
                 final String username = mUm.getUserInfo(userId).name;
 
@@ -5006,43 +5014,10 @@ public class NotificationManagerService extends SystemService {
                                 .setGroup("USER_GROUP_" + userId)
                                 .build();
 
-                //notificationStrippedIntents.actions = new Notification.Action[1];
-                //notificationStrippedIntents.actions[0] = new Notification.Action.Builder(
-                //        null /* icon */,
-                //        "Switch to user",
-                //        pendingIntentSwitchUser2).build();
-
                 enqueueNotificationInternal(getContext().getPackageName(),
                         getContext().getPackageName(), Binder.getCallingUid(),
                         Binder.getCallingPid(), tag, id, censoredNotif, currentUser);
-                //enqueueNotificationInternal(getContext().getPackageName(),
-                //        getContext().getPackageName(), Binder.getCallingUid(),
-                //        Binder.getCallingPid(), tag, id, notificationStrippedIntents, currentUser);
 
-                // Can just create the notification. All the rate limiting checks, etc. were already
-                // done beforehand.
-
-                Slog.wtf(TAG, "DEBUG: ATTEMTPING SECOND MESSAGE");
-
-                final NotificationChannel sysChannel = mPreferencesHelper.getNotificationChannel(
-                        getContext().getPackageName(), Process.SYSTEM_UID, SystemNotificationChannels.OTHER_USERS,
-                        false);
-
-                // Sets the app notification, but has a bunch of package errors because a package
-                // might not be installed in the currentUser's side.
-                /*
-                final StatusBarNotification n1 = new StatusBarNotification(
-                        getContext().getPackageName(), getContext().getPackageName(), id, tag, notificationUid, Binder.getCallingPid(), notificationStrippedIntents,
-                        UserHandle.of(currentUser), null, n.getPostTime());
-                final NotificationRecord r1 = new NotificationRecord(getContext(), n1, channel);
-
-                r1.setIsAppImportanceLocked(mPreferencesHelper.getIsAppImportanceLocked(pkg, callingUid));
-
-                mHandler.post(new EnqueueNotificationRunnable(currentUser, r1));
-                */
-
-                Slog.d(TAG, "DEBUG: sysChannel.getImportance(): " + sysChannel.getImportance());
-                Slog.d(TAG, "DEBUG: channel.getImportance(): " + channel.getImportance());
             } finally {
                 Binder.restoreCallingIdentity(token1);
             }
@@ -5091,56 +5066,6 @@ public class NotificationManagerService extends SystemService {
             }
         }
         return contextForUser.getPackageManager();
-    }
-
-    private final BroadcastReceiver mSwitchUserReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            Slog.d(TAG, "DEBUG: SwitchUserReceiver receieve");
-            if (!"com.android.server.notification.ACTION_SWITCH_USER".equals(intent.getAction())) {
-                Slog.d(TAG, "DEBUG: SwitchUserReceiver failed");
-                return;
-            }
-
-            final int userIdToSwitchTo = intent.getIntExtra("userid", -1);
-            Slog.d(TAG, "DEBUG: SwitchUserReceiver userIdToSwitchTo " + userIdToSwitchTo);
-            if (userIdToSwitchTo >= 0) {
-                try {
-                    Slog.d(TAG, "DEBUG: SwitchUserReceiver trying switch");
-                    ActivityManager.getService().switchUser(userIdToSwitchTo);
-                } catch (RemoteException re) {
-                    Slog.d(TAG, "DEBUG: SwitchUserReceiver failed exception");
-                    // Do nothing
-                }
-            }
-        }
-    };
-
-    private static class SwitchUserReceiver extends BroadcastReceiver {
-        public static final String SWITCH_ACTION =
-                "com.android.server.notification.ACTION_SWITCH_USER";
-        public static final String USERID_TO_SWITCH_TO_EXTRA = "userid";
-
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            Slog.d(TAG, "DEBUG: SwitchUserReceiver receieve");
-            if (!SWITCH_ACTION.equals(intent.getAction())) {
-                Slog.d(TAG, "DEBUG: SwitchUserReceiver failed");
-                return;
-            }
-
-            final int userIdToSwitchTo = intent.getIntExtra(USERID_TO_SWITCH_TO_EXTRA, -1);
-            Slog.d(TAG, "DEBUG: SwitchUserReceiver userIdToSwitchTo " + userIdToSwitchTo);
-            if (userIdToSwitchTo >= 0) {
-                try {
-                    Slog.d(TAG, "DEBUG: SwitchUserReceiver trying switch");
-                    ActivityManager.getService().switchUser(userIdToSwitchTo);
-                } catch (RemoteException re) {
-                    Slog.d(TAG, "DEBUG: SwitchUserReceiver failed exception");
-                    // Do nothing
-                }
-            }
-        }
     }
 
     @VisibleForTesting
