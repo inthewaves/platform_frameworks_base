@@ -4792,6 +4792,16 @@ public class NotificationManagerService extends SystemService {
                 callingUid, incomingUserId, true, false, "enqueueNotification", pkg);
         final UserHandle user = UserHandle.of(userId);
 
+        final int currentUser;
+        final long token = Binder.clearCallingIdentity();
+        try {
+            currentUser = ActivityManager.getCurrentUser();
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+
+        Slog.d(TAG, "DEBUG: userId is " + userId + ", while ActivityManager.getCurrentUser() is " + currentUser);
+
         // Can throw a SecurityException if the calling uid doesn't have permission to post
         // as "pkg"
         final int notificationUid = resolveNotificationUid(opPkg, pkg, callingUid, userId);
@@ -4902,6 +4912,26 @@ public class NotificationManagerService extends SystemService {
         }
 
         mHandler.post(new EnqueueNotificationRunnable(userId, r));
+
+        if (currentUser != userId && userId != UserHandle.USER_ALL) {
+            Slog.wtf(TAG, "DEBUG: ATTEMPTING TO REPLICATION NOTIFICATION");
+            Notification notificationStrippedIntents = notification.clone();
+
+            final long token1 = Binder.clearCallingIdentity();
+            try {
+                //enqueueNotificationInternal(pkg, opPkg, Process.SYSTEM_UID, Binder.getCallingPid(), tag, id, notificationStrippedIntents,
+                 //       currentUser);
+                final StatusBarNotification n1 = new StatusBarNotification(
+                        pkg, opPkg, id, tag, notificationUid, Binder.getCallingPid(), notificationStrippedIntents,
+                        UserHandle.of(currentUser), null, System.currentTimeMillis());
+                final NotificationRecord r1 = new NotificationRecord(getContext(), n1, channel);
+                r1.setIsAppImportanceLocked(mPreferencesHelper.getIsAppImportanceLocked(pkg, callingUid));
+
+                mHandler.post(new EnqueueNotificationRunnable(currentUser, r1));
+            } finally {
+                Binder.restoreCallingIdentity(token1);
+            }
+        }
     }
 
     @VisibleForTesting
