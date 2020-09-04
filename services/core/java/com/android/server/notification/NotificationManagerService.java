@@ -19,7 +19,6 @@ package com.android.server.notification;
 import static android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND;
 import static android.app.Notification.CATEGORY_CALL;
 import static android.app.Notification.FLAG_AUTOGROUP_SUMMARY;
-import static android.app.Notification.FLAG_AUTO_CANCEL;
 import static android.app.Notification.FLAG_BUBBLE;
 import static android.app.Notification.FLAG_FOREGROUND_SERVICE;
 import static android.app.Notification.FLAG_NO_CLEAR;
@@ -148,11 +147,6 @@ import android.content.pm.ParceledListSlice;
 import android.content.pm.UserInfo;
 import android.content.res.Resources;
 import android.database.ContentObserver;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
@@ -4984,80 +4978,98 @@ public class NotificationManagerService extends SystemService {
                     Slog.wtf(TAG, "DEBUG: NOT REPLICATING: THE CURRENT USER IS A WORK PROFILE OR SIMILAR");
                     return;
                 }
-                final String username = mUm.getUserInfo(userId).name;
-
-                final PackageManager pmUser = getPackageManagerForUser(getContext(), currentUser);
-                String appname = null;
-                try {
-                    final ApplicationInfo info = pmUser.getApplicationInfo(pkg,
-                            PackageManager.MATCH_UNINSTALLED_PACKAGES
-                                    | PackageManager.MATCH_DISABLED_COMPONENTS);
-                    if (info != null) {
-                        appname = String.valueOf(pmUser.getApplicationLabel(info));
-                    }
-                } catch (PackageManager.NameNotFoundException e) {
-                    // Nothing
-                }
-
-                final String title = appname == null ? "Notification for " + username
-                        : "Notification from " + appname + " for " + username;
-
-                Icon icon = notification.getSmallIcon();
-                if (icon.getType() == Icon.TYPE_RESOURCE) {
-                    Slog.d(TAG, "DEBUG: Checking if " + pkg + " is installed for user " + currentUser);
-                    final PackageManager pmCurrentUser = getPackageManagerForUser(getContext(), currentUser);
-                    if (!pmCurrentUser.isPackageAvailable(pkg)) {
-                        Slog.d(TAG, "DEBUG: Package " + pkg + " is not installed for user " + currentUser);
-                        icon = null;
-                    }
-                }
-
-
-                final int notificationId = id;
-
-                final Intent intent = new Intent(ACTION_SWITCH_USER)
-                        .putExtra(EXTRA_SWITCH_USER_USERID, userId)
-                        .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
-                        .putExtra(EXTRA_SWITCH_USER_CURRENT_USERID, currentUser)
-                        .setPackage(getContext().getPackageName());
-
-                PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
-                        intent, 0);
-
-                final Notification.Builder builder =
-                        new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
-                                //.setFlag(notification.flags, true)
-                                .addAction(new Notification.Action.Builder(null /* icon */,
-                                        "Switch to user",
-                                        pendingIntentSwitchUser).build())
-                                .setAutoCancel(false)
-                                .setOngoing(false)
-                                .setColor(notification.color)
-                                .setContentTitle(title)
-                                .setContentText("Tap to open user.")
-                                .setVisibility(Notification.VISIBILITY_PRIVATE)
-                                .setGroup("USER_GROUP_" + userId)
-                                .setWhen(notification.when)
-                                .setShowWhen(notification.showsTime());
-                if (icon == null) {
-                    builder.setSmallIcon(R.drawable.ic_account_circle);
-                } else {
-                    builder.setSmallIcon(icon);
-                }
-
-                final long tokenForEnqueue = Binder.clearCallingIdentity();
-                try {
-                    enqueueNotificationInternal(getContext().getPackageName(),
-                            getContext().getPackageName(), Binder.getCallingUid(),
-                            Binder.getCallingPid(), TAG_SWITCH_USER, notificationId,
-                            builder.build(), currentUser);
-                } finally {
-                    Binder.restoreCallingIdentity(tokenForEnqueue);
-                }
-
             } finally {
                 Binder.restoreCallingIdentity(tokenForMum);
             }
+
+            mHandler.post(new ForwardCensoredNotificationRunnable(pkg, userId, currentUser, id,
+                    notification));
+        }
+    }
+
+    protected class ForwardCensoredNotificationRunnable implements Runnable {
+        private String pkg;
+        private int userId;
+        private int currentUserId;
+        private int notificationId;
+        private Notification notificationToCensor;
+
+        ForwardCensoredNotificationRunnable(String pkg, int userId, int currentUserId,
+                                            int notificationId, Notification notificationToCensor) {
+            this.pkg = pkg;
+            this.userId = userId;
+            this.currentUserId = currentUserId;
+            this.notificationId = notificationId;
+            this.notificationToCensor = notificationToCensor;
+        }
+
+        @Override
+        public void run() {
+            final String username = mUm.getUserInfo(userId).name;
+            final PackageManager pmUser = getPackageManagerForUser(getContext(), currentUserId);
+            String appname = null;
+            try {
+                final ApplicationInfo info = pmUser.getApplicationInfo(pkg,
+                        PackageManager.MATCH_UNINSTALLED_PACKAGES
+                                | PackageManager.MATCH_DISABLED_COMPONENTS);
+                if (info != null) {
+                    appname = String.valueOf(pmUser.getApplicationLabel(info));
+                }
+            } catch (PackageManager.NameNotFoundException e) {
+                // Nothing
+            }
+
+            final String title = appname == null
+                    ? "Notification for " + username
+                    : "Notification from " + appname + " for " + username;
+
+            Icon icon = notificationToCensor.getSmallIcon();
+            if (icon.getType() == Icon.TYPE_RESOURCE) {
+                Slog.d(TAG, "DEBUG: Checking if " + pkg + " is installed for user " + currentUserId);
+                final PackageManager pmCurrentUser = getPackageManagerForUser(getContext(), currentUserId);
+                if (!pmCurrentUser.isPackageAvailable(pkg)) {
+                    Slog.d(TAG, "DEBUG: Package " + pkg + " is not installed for user " + currentUserId);
+                    icon = null;
+                }
+            }
+
+            final Intent intent = new Intent(ACTION_SWITCH_USER)
+                    .putExtra(EXTRA_SWITCH_USER_USERID, userId)
+                    .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
+                    .putExtra(EXTRA_SWITCH_USER_CURRENT_USERID, currentUserId)
+                    .setPackage(getContext().getPackageName());
+
+            PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
+                    intent, 0);
+
+            final Notification.Builder builder =
+                    new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
+                            //.setFlag(notification.flags, true)
+                            .addAction(new Notification.Action.Builder(null /* icon */,
+                                    "Switch to user",
+                                    pendingIntentSwitchUser).build())
+                            .setAutoCancel(false)
+                            .setOngoing(false)
+                            .setColor(notificationToCensor.color)
+                            .setContentTitle(title)
+                            .setContentText("Tap to open user.")
+                            .setVisibility(Notification.VISIBILITY_PRIVATE)
+                            .setGroup("USER_GROUP_" + userId)
+                            .setWhen(notificationToCensor.when)
+                            .setShowWhen(notificationToCensor.showsTime());
+            if (icon == null) {
+                builder.setSmallIcon(R.drawable.ic_account_circle);
+            } else {
+                builder.setSmallIcon(icon);
+            }
+
+
+            Slog.d(TAG, "DEBUG: Runnable Binder.getCallingUid() " + Binder.getCallingUid());
+            Slog.d(TAG, "DEBUG: Runnable Binder.getCallingPid() " + Binder.getCallingPid());
+            enqueueNotificationInternal(getContext().getPackageName(),
+                    getContext().getPackageName(), Binder.getCallingUid(),
+                    Binder.getCallingPid(), TAG_SWITCH_USER, notificationId,
+                    builder.build(), currentUserId);
         }
     }
 
