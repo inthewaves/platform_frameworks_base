@@ -363,7 +363,6 @@ public class NotificationManagerService extends SystemService {
             NotificationManagerService.class.getSimpleName() + ".SWITCH_USER";
     private static final String EXTRA_SWITCH_USER_USERID = "userid";
     private static final String EXTRA_SWITCH_USER_NOTIFICATION_ID = "notification_id";
-    private static final String EXTRA_SWITCH_USER_CURRENT_USERID = "current_userid";
     private static final String TAG_SWITCH_USER = "switch_user";
 
     private IActivityManager mAm;
@@ -1388,6 +1387,13 @@ public class NotificationManagerService extends SystemService {
                     mZenModeHelper.onUserUnlocked(userId);
                     mPreferencesHelper.onUserUnlocked(userId);
                 }
+            } else if (action.equals(Intent.ACTION_USER_BACKGROUND)) {
+                final int userId = intent.getIntExtra(Intent.EXTRA_USER_HANDLE, -1);
+                if (userId >= 0) {
+                    cancelAllNotificationsInt(MY_UID, MY_PID, getContext().getPackageName(),
+                            SystemNotificationChannels.OTHER_USERS, 0, 0, true, userId,
+                            REASON_APP_CANCEL_ALL, null);
+                }
             }
         }
     };
@@ -1399,23 +1405,6 @@ public class NotificationManagerService extends SystemService {
             if (!ACTION_SWITCH_USER.equals(intent.getAction())) {
                 Slog.d(TAG, "DEBUG: SwitchUserReceiver failed");
                 return;
-            }
-            // (String pkg, String tag, int id, int userId)
-
-
-
-            final int currentUserId = intent.getIntExtra(EXTRA_SWITCH_USER_CURRENT_USERID, -1);
-            if (currentUserId != -1) {
-                //try {
-                    // getBinderService().cancelNotificationWithTag(getContext().getPackageName(),
-                    //         TAG_SWITCH_USER, intent.getIntExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, -1),
-                    //         currentUserId);
-                cancelAllNotificationsInt(MY_UID, MY_PID, getContext().getPackageName(),
-                        SystemNotificationChannels.OTHER_USERS, 0, 0, true, currentUserId,
-                        REASON_APP_CANCEL_ALL, null);
-                //} catch (RemoteException e) {
-                    // Do nothing, the notification can't be cancelled.
-                //}
             }
 
             final int userIdToSwitchTo = intent.getIntExtra(EXTRA_SWITCH_USER_USERID, -1);
@@ -1890,6 +1879,7 @@ public class NotificationManagerService extends SystemService {
         filter.addAction(Intent.ACTION_USER_REMOVED);
         filter.addAction(Intent.ACTION_USER_UNLOCKED);
         filter.addAction(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE);
+        filter.addAction(Intent.ACTION_USER_BACKGROUND);
         getContext().registerReceiverAsUser(mIntentReceiver, UserHandle.ALL, filter, null, null);
 
         IntentFilter pkgFilter = new IntentFilter();
@@ -5051,7 +5041,6 @@ public class NotificationManagerService extends SystemService {
             final Intent intent = new Intent(ACTION_SWITCH_USER)
                     .putExtra(EXTRA_SWITCH_USER_USERID, userId)
                     .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
-                    .putExtra(EXTRA_SWITCH_USER_CURRENT_USERID, currentUserId)
                     .setPackage(getContext().getPackageName());
 
             // TODO: Fix the pending intents
