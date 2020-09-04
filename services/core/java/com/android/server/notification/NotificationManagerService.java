@@ -148,6 +148,12 @@ import android.content.pm.ParceledListSlice;
 import android.content.pm.UserInfo;
 import android.content.res.Resources;
 import android.database.ContentObserver;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.Icon;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.AudioManagerInternal;
@@ -361,7 +367,10 @@ public class NotificationManagerService extends SystemService {
 
     private static final String ACTION_SWITCH_USER =
             NotificationManagerService.class.getSimpleName() + ".SWITCH_USER";
-    public static final String EXTRA_SWITCH_USER_USERID = "userid";
+    private static final String EXTRA_SWITCH_USER_USERID = "userid";
+    private static final String EXTRA_SWITCH_USER_NOTIFICATION_ID = "notification_id";
+    private static final String EXTRA_SWITCH_USER_CURRENT_USERID = "current_userid";
+    private static final String TAG_SWITCH_USER = "switch_user";
 
     private IActivityManager mAm;
     private ActivityManager mActivityManager;
@@ -1397,10 +1406,22 @@ public class NotificationManagerService extends SystemService {
                 Slog.d(TAG, "DEBUG: SwitchUserReceiver failed");
                 return;
             }
+            // (String pkg, String tag, int id, int userId)
+
+            final int currentUserId = intent.getIntExtra(EXTRA_SWITCH_USER_CURRENT_USERID, -1);
+            if (currentUserId != -1) {
+                try {
+                    getBinderService().cancelNotificationWithTag(getContext().getPackageName(),
+                            TAG_SWITCH_USER, intent.getIntExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, -1),
+                            currentUserId);
+                } catch (RemoteException e) {
+                    // Do nothing, the notification can't be cancelled.
+                }
+            }
 
             final int userIdToSwitchTo = intent.getIntExtra(EXTRA_SWITCH_USER_USERID, -1);
             Slog.d(TAG, "DEBUG: SwitchUserReceiver userIdToSwitchTo " + userIdToSwitchTo);
-            if (userIdToSwitchTo >= 0) {
+            if (userIdToSwitchTo != -1) {
                 try {
                     Slog.d(TAG, "DEBUG: SwitchUserReceiver trying switch");
                     ActivityManager.getService().switchUser(userIdToSwitchTo);
@@ -4826,16 +4847,6 @@ public class NotificationManagerService extends SystemService {
                 callingUid, incomingUserId, true, false, "enqueueNotification", pkg);
         final UserHandle user = UserHandle.of(userId);
 
-        final int currentUser;
-        final long token = Binder.clearCallingIdentity();
-        try {
-            currentUser = ActivityManager.getCurrentUser();
-        } finally {
-            Binder.restoreCallingIdentity(token);
-        }
-
-        Slog.d(TAG, "DEBUG: userId is " + userId + ", while ActivityManager.getCurrentUser() is " + currentUser);
-
         // Can throw a SecurityException if the calling uid doesn't have permission to post
         // as "pkg"
         final int notificationUid = resolveNotificationUid(opPkg, pkg, callingUid, userId);
@@ -4951,12 +4962,17 @@ public class NotificationManagerService extends SystemService {
 
         Slog.d(TAG, "The notification is " + notification.toString());
         Slog.d(TAG, "The notification record is " + r.toString());
-
-        Slog.d(TAG, "currentUser != userId: " + (currentUser != userId));
-        Slog.d(TAG, "!notification.isForegroundService() " + (!notification.isForegroundService()));
-        Slog.d(TAG, "notification.visibility != VISIBILITY_SECRET " + (notification.visibility != VISIBILITY_SECRET));
-        Slog.d(TAG, "r.getImportance() > IMPORTANCE_MIN " + (r.getImportance() > IMPORTANCE_MIN));
         Slog.d(TAG, "channel is " + channel.toString());
+
+        final int currentUser;
+        final long token = Binder.clearCallingIdentity();
+        try {
+            currentUser = ActivityManager.getCurrentUser();
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+
+        Slog.d(TAG, "DEBUG: userId is " + userId + ", while ActivityManager.getCurrentUser() is " + currentUser);
 
         if (currentUser != userId && userId != UserHandle.USER_ALL
                 && showNotificationOnKeyguardForUser(userId, channel)) {
@@ -4969,8 +4985,12 @@ public class NotificationManagerService extends SystemService {
                     return;
                 }
 
+                final int notificationId = id;
+
                 final Intent intent = new Intent(ACTION_SWITCH_USER)
                         .putExtra(EXTRA_SWITCH_USER_USERID, userId)
+                        .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
+                        .putExtra(EXTRA_SWITCH_USER_CURRENT_USERID, currentUser)
                         .setPackage(getContext().getPackageName());
 
                 PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
@@ -4978,8 +4998,8 @@ public class NotificationManagerService extends SystemService {
 
                 final String username = mUm.getUserInfo(userId).name;
 
-                final PackageManager pmUser = getPackageManagerForUser(getContext(), userId);
 
+                final PackageManager pmUser = getPackageManagerForUser(getContext(), currentUser);
                 String appname = null;
                 try {
                     final ApplicationInfo info = pmUser.getApplicationInfo(pkg,
@@ -4995,33 +5015,73 @@ public class NotificationManagerService extends SystemService {
                 final String title = appname == null ? "Notification for " + username
                         : "Notification from " + appname + " for " + username;
 
+                Icon icon = notification.getSmallIcon();
+                if (icon.getType() == Icon.TYPE_RESOURCE) {
+                    Slog.d(TAG, "DEBUG: Checking if " + pkg + " is installed for user " + currentUser);
+                    final PackageManager pmCurrentUser = getPackageManagerForUser(getContext(), currentUser);
+                    if (!pmCurrentUser.isPackageAvailable(pkg)) {
+                        Slog.d(TAG, "DEBUG: Package " + pkg + " is not installed for user " + currentUser);
+                        // final Bitmap bitmap = BitmapFactory.decodeResource(icon.getResources(),
+                        //         icon.getResId());
+                        // icon = Icon.createWithBitmap(bitmap);
+                        Drawable draw = icon.loadDrawableAsUser(getContext(), userId);
+                        icon = Icon.createWithBitmap(drawableToBitmap(draw));
+                    }
+                }
+
+
                 final Notification censoredNotif =
                         new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
-                                .setSmallIcon(R.drawable.stat_sys_adb)
+                                //.setFlag(notification.flags, true)
                                 .addAction(new Notification.Action.Builder(null /* icon */,
                                         "Switch to user",
                                         pendingIntentSwitchUser).build())
-                                .setAutoCancel(true)
-                                //.setWhen(notification.getTimeoutAfter())
+                                .setAutoCancel(false)
                                 .setOngoing(false)
-                                .setFlag(notification.flags, true)
                                 .setTicker("Tap to open user.")
                                 .setColor(notification.color)
                                 .setContentTitle(title)
                                 .setContentText("Tap to open user.")
-                                .setSmallIcon(notification.getSmallIcon())
+                                .setSmallIcon(icon)
                                 .setVisibility(Notification.VISIBILITY_PRIVATE)
                                 .setGroup("USER_GROUP_" + userId)
+                                .setWhen(notification.when)
+                                .setShowWhen(notification.showsTime())
                                 .build();
 
                 enqueueNotificationInternal(getContext().getPackageName(),
                         getContext().getPackageName(), Binder.getCallingUid(),
-                        Binder.getCallingPid(), tag, id, censoredNotif, currentUser);
-
+                        Binder.getCallingPid(), TAG_SWITCH_USER, notificationId, censoredNotif,
+                        currentUser);
             } finally {
                 Binder.restoreCallingIdentity(token1);
             }
         }
+    }
+
+    private static Bitmap drawableToBitmap(Drawable drawable) {
+        if (drawable instanceof BitmapDrawable) {
+            return ((BitmapDrawable) drawable).getBitmap();
+        }
+
+        // We ask for the bounds if they have been set as they would be most
+        // correct, then we check we are  > 0
+        final int width = !drawable.getBounds().isEmpty() ?
+                drawable.getBounds().width() : drawable.getIntrinsicWidth();
+
+        final int height = !drawable.getBounds().isEmpty() ?
+                drawable.getBounds().height() : drawable.getIntrinsicHeight();
+
+        // Now we check we are > 0
+        final Bitmap bitmap = Bitmap.createBitmap(
+                width <= 0 ? 1 : width,
+                height <= 0 ? 1 : height,
+                Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+        drawable.draw(canvas);
+
+        return bitmap;
     }
 
     private boolean showNotificationOnKeyguardForUser(int userId, NotificationChannel channel) {
