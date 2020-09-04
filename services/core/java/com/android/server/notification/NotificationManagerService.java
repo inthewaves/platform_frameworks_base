@@ -280,7 +280,7 @@ import java.util.function.BiConsumer;
 /** {@hide} */
 public class NotificationManagerService extends SystemService {
     static final String TAG = "NotificationService";
-    static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG) || true;
+    static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG);
     public static final boolean ENABLE_CHILD_NOTIFICATIONS
             = SystemProperties.getBoolean("debug.child_notifs", true);
 
@@ -1401,20 +1401,15 @@ public class NotificationManagerService extends SystemService {
     private final BroadcastReceiver mSwitchUserReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            Slog.d(TAG, "DEBUG: SwitchUserReceiver receieve");
             if (!ACTION_SWITCH_USER.equals(intent.getAction())) {
-                Slog.d(TAG, "DEBUG: SwitchUserReceiver failed");
                 return;
             }
 
             final int userIdToSwitchTo = intent.getIntExtra(EXTRA_SWITCH_USER_USERID, -1);
-            Slog.d(TAG, "DEBUG: SwitchUserReceiver userIdToSwitchTo " + userIdToSwitchTo);
             if (userIdToSwitchTo != -1) {
                 try {
-                    Slog.d(TAG, "DEBUG: SwitchUserReceiver trying switch");
                     ActivityManager.getService().switchUser(userIdToSwitchTo);
                 } catch (RemoteException re) {
-                    Slog.d(TAG, "DEBUG: SwitchUserReceiver failed exception");
                     // Do nothing
                 }
             }
@@ -1846,7 +1841,6 @@ public class NotificationManagerService extends SystemService {
         }, mUserProfiles);
 
         final File systemDir = new File(Environment.getDataDirectory(), "system");
-        final Environment e = new Environment();
 
         init(Looper.myLooper(),
                 AppGlobals.getPackageManager(), getContext().getPackageManager(),
@@ -4824,7 +4818,6 @@ public class NotificationManagerService extends SystemService {
         if (DBG) {
             Slog.v(TAG, "enqueueNotificationInternal: pkg=" + pkg + " id=" + id
                     + " notification=" + notification);
-            Slog.v(TAG, "callingUid=" + callingUid + " callingPid=" + callingPid);
         }
 
         if (pkg == null || notification == null) {
@@ -4839,8 +4832,6 @@ public class NotificationManagerService extends SystemService {
         // Can throw a SecurityException if the calling uid doesn't have permission to post
         // as "pkg"
         final int notificationUid = resolveNotificationUid(opPkg, pkg, callingUid, userId);
-
-        Slog.d(TAG, "DEBUG: notificationUid is " + notificationUid);
 
         checkRestrictedCategories(notification);
 
@@ -4949,10 +4940,6 @@ public class NotificationManagerService extends SystemService {
 
         mHandler.post(new EnqueueNotificationRunnable(userId, r));
 
-        Slog.d(TAG, "The notification is " + notification.toString());
-        Slog.d(TAG, "The notification record is " + r.toString());
-        Slog.d(TAG, "channel is " + channel.toString());
-
         final int currentUser;
         final long token = Binder.clearCallingIdentity();
         try {
@@ -4961,16 +4948,11 @@ public class NotificationManagerService extends SystemService {
             Binder.restoreCallingIdentity(token);
         }
 
-        Slog.d(TAG, "DEBUG: userId is " + userId + ", while ActivityManager.getCurrentUser() is " + currentUser);
-
         if (currentUser != userId && userId != UserHandle.USER_ALL
                 && showNotificationOnKeyguardForUser(userId, channel)) {
-            Slog.wtf(TAG, "DEBUG: ATTEMPTING TO REPLICATE NOTIFICATION INTENDED FOR " + userId + " INTO CURRENT USER " + currentUser);
-
             final long tokenForMum = Binder.clearCallingIdentity();
             try {
                 if (mUm.isSameProfileGroup(currentUser, userId)) {
-                    Slog.wtf(TAG, "DEBUG: NOT REPLICATING: THE CURRENT USER IS A WORK PROFILE OR SIMILAR");
                     return;
                 }
             } finally {

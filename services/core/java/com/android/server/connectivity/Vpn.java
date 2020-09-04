@@ -1627,8 +1627,6 @@ public class Vpn {
                             .setVisibility(Notification.VISIBILITY_PUBLIC)
                             .setOngoing(true)
                             .setColor(mContext.getColor(R.color.system_notification_accent_color));
-            Log.d(TAG, "DEBUG: THE getPackageName FOR ALWAYS ON VPN DISCONNECT NOTIF IS " + mContext.getPackageName());
-            Log.d(TAG, "DEBUG: THE getOpPackageName FOR ALWAYS ON VPN DISCONNECT NOTIF IS " + mContext.getOpPackageName());
             notificationManager.notifyAsUser(TAG, SystemMessage.NOTE_VPN_DISCONNECTED,
                     builder.build(), user);
         } finally {
