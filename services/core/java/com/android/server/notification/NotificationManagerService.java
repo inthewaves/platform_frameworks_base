@@ -4978,26 +4978,13 @@ public class NotificationManagerService extends SystemService {
                 && showNotificationOnKeyguardForUser(userId, channel)) {
             Slog.wtf(TAG, "DEBUG: ATTEMPTING TO REPLICATE NOTIFICATION INTENDED FOR " + userId + " INTO CURRENT USER " + currentUser);
 
-            final long token1 = Binder.clearCallingIdentity();
+            final long tokenForMum = Binder.clearCallingIdentity();
             try {
                 if (mUm.isSameProfileGroup(currentUser, userId)) {
                     Slog.wtf(TAG, "DEBUG: NOT REPLICATING: THE CURRENT USER IS A WORK PROFILE OR SIMILAR");
                     return;
                 }
-
-                final int notificationId = id;
-
-                final Intent intent = new Intent(ACTION_SWITCH_USER)
-                        .putExtra(EXTRA_SWITCH_USER_USERID, userId)
-                        .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
-                        .putExtra(EXTRA_SWITCH_USER_CURRENT_USERID, currentUser)
-                        .setPackage(getContext().getPackageName());
-
-                PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
-                        intent, 0);
-
                 final String username = mUm.getUserInfo(userId).name;
-
 
                 final PackageManager pmUser = getPackageManagerForUser(getContext(), currentUser);
                 String appname = null;
@@ -5021,16 +5008,23 @@ public class NotificationManagerService extends SystemService {
                     final PackageManager pmCurrentUser = getPackageManagerForUser(getContext(), currentUser);
                     if (!pmCurrentUser.isPackageAvailable(pkg)) {
                         Slog.d(TAG, "DEBUG: Package " + pkg + " is not installed for user " + currentUser);
-                        // final Bitmap bitmap = BitmapFactory.decodeResource(icon.getResources(),
-                        //         icon.getResId());
-                        // icon = Icon.createWithBitmap(bitmap);
-                        Drawable draw = icon.loadDrawableAsUser(getContext(), userId);
-                        icon = Icon.createWithBitmap(drawableToBitmap(draw));
+                        icon = null;
                     }
                 }
 
 
-                final Notification censoredNotif =
+                final int notificationId = id;
+
+                final Intent intent = new Intent(ACTION_SWITCH_USER)
+                        .putExtra(EXTRA_SWITCH_USER_USERID, userId)
+                        .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
+                        .putExtra(EXTRA_SWITCH_USER_CURRENT_USERID, currentUser)
+                        .setPackage(getContext().getPackageName());
+
+                PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
+                        intent, 0);
+
+                final Notification.Builder builder =
                         new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
                                 //.setFlag(notification.flags, true)
                                 .addAction(new Notification.Action.Builder(null /* icon */,
@@ -5038,50 +5032,33 @@ public class NotificationManagerService extends SystemService {
                                         pendingIntentSwitchUser).build())
                                 .setAutoCancel(false)
                                 .setOngoing(false)
-                                .setTicker("Tap to open user.")
                                 .setColor(notification.color)
                                 .setContentTitle(title)
                                 .setContentText("Tap to open user.")
-                                .setSmallIcon(icon)
                                 .setVisibility(Notification.VISIBILITY_PRIVATE)
                                 .setGroup("USER_GROUP_" + userId)
                                 .setWhen(notification.when)
-                                .setShowWhen(notification.showsTime())
-                                .build();
+                                .setShowWhen(notification.showsTime());
+                if (icon == null) {
+                    builder.setSmallIcon(R.drawable.stat_sys_adb);
+                } else {
+                    builder.setSmallIcon(icon);
+                }
 
-                enqueueNotificationInternal(getContext().getPackageName(),
-                        getContext().getPackageName(), Binder.getCallingUid(),
-                        Binder.getCallingPid(), TAG_SWITCH_USER, notificationId, censoredNotif,
-                        currentUser);
+                final long tokenForEnqueue = Binder.clearCallingIdentity();
+                try {
+                    enqueueNotificationInternal(getContext().getPackageName(),
+                            getContext().getPackageName(), Binder.getCallingUid(),
+                            Binder.getCallingPid(), TAG_SWITCH_USER, notificationId,
+                            builder.build(), currentUser);
+                } finally {
+                    Binder.restoreCallingIdentity(tokenForEnqueue);
+                }
+
             } finally {
-                Binder.restoreCallingIdentity(token1);
+                Binder.restoreCallingIdentity(tokenForMum);
             }
         }
-    }
-
-    private static Bitmap drawableToBitmap(Drawable drawable) {
-        if (drawable instanceof BitmapDrawable) {
-            return ((BitmapDrawable) drawable).getBitmap();
-        }
-
-        // We ask for the bounds if they have been set as they would be most
-        // correct, then we check we are  > 0
-        final int width = !drawable.getBounds().isEmpty() ?
-                drawable.getBounds().width() : drawable.getIntrinsicWidth();
-
-        final int height = !drawable.getBounds().isEmpty() ?
-                drawable.getBounds().height() : drawable.getIntrinsicHeight();
-
-        // Now we check we are > 0
-        final Bitmap bitmap = Bitmap.createBitmap(
-                width <= 0 ? 1 : width,
-                height <= 0 ? 1 : height,
-                Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bitmap);
-        drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
-        drawable.draw(canvas);
-
-        return bitmap;
     }
 
     private boolean showNotificationOnKeyguardForUser(int userId, NotificationChannel channel) {
