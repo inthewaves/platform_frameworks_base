@@ -24,6 +24,8 @@ import static android.app.Notification.FLAG_FOREGROUND_SERVICE;
 import static android.app.Notification.FLAG_NO_CLEAR;
 import static android.app.Notification.FLAG_ONGOING_EVENT;
 import static android.app.Notification.FLAG_ONLY_ALERT_ONCE;
+import static android.app.Notification.GROUP_ALERT_CHILDREN;
+import static android.app.Notification.GROUP_ALERT_SUMMARY;
 import static android.app.Notification.VISIBILITY_SECRET;
 import static android.app.NotificationManager.ACTION_APP_BLOCK_STATE_CHANGED;
 import static android.app.NotificationManager.ACTION_NOTIFICATION_CHANNEL_BLOCK_STATE_CHANGED;
@@ -4959,7 +4961,8 @@ public class NotificationManagerService extends SystemService {
                 Binder.restoreCallingIdentity(tokenForMum);
             }
 
-            mHandler.post(new ForwardCensoredNotificationRunnable(pkg, userId, currentUser, id));
+            mHandler.post(new ForwardCensoredNotificationRunnable(pkg, userId, currentUser, id,
+                    channel.getImportance()));
         }
     }
 
@@ -4976,21 +4979,22 @@ public class NotificationManagerService extends SystemService {
         private final int userId;
         private final int currentUserId;
         private final int notificationId;
+        private final int importance;
         private final String notificationGroupKey;
 
         ForwardCensoredNotificationRunnable(String pkg, int userId, int currentUserId,
-                                            int notificationId) {
+                                            int notificationId, int importance) {
             this.pkg = pkg;
             this.userId = userId;
             this.currentUserId = currentUserId;
-            // Save room for auto group summary id, which is Integer.MAX_VALUE, and for the
-            // case when the notification id is exactly the summary.
-            this.notificationSummaryId = Integer.MAX_VALUE - 2 - userId;
-            this.notificationId = notificationId != this.notificationSummaryId
-                    ? notificationId
-                    : notificationId + 1;
+            this.importance = importance;
 
+            // Group censored notifications by user.
             notificationGroupKey = "USER_" + userId;
+            // Save room for auto group summary id, which is Integer.MAX_VALUE
+            this.notificationSummaryId = Integer.MAX_VALUE - 1 - userId;
+            this.notificationId = notificationId != this.notificationSummaryId
+                    ? notificationId : 0;
         }
 
         @Override
@@ -5040,6 +5044,8 @@ public class NotificationManagerService extends SystemService {
                             .setContentTitle(title)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup(notificationGroupKey)
+                            .setGroupAlertBehavior(importance == IMPORTANCE_LOW
+                                    ? GROUP_ALERT_SUMMARY : GROUP_ALERT_CHILDREN)
                             .setWhen(System.currentTimeMillis())
                             .setShowWhen(true)
                             .build();
@@ -5057,7 +5063,9 @@ public class NotificationManagerService extends SystemService {
                             .setColor(color)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup(notificationGroupKey)
+                            .setGroupAlertBehavior(GROUP_ALERT_CHILDREN)
                             .setGroupSummary(true)
+                            .setOnlyAlertOnce(true)
                             .build();
 
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
@@ -5068,7 +5076,8 @@ public class NotificationManagerService extends SystemService {
 
     private boolean showNotificationOnKeyguardForUser(int userId, NotificationChannel channel) {
         if (channel.getLockscreenVisibility() == VISIBILITY_SECRET
-            || channel.getImportance() == IMPORTANCE_MIN) {
+            || channel.getImportance() == IMPORTANCE_MIN
+            || channel.getImportance() == IMPORTANCE_NONE) {
             return false;
         }
 
