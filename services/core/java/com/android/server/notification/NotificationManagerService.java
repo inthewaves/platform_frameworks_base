@@ -4959,31 +4959,38 @@ public class NotificationManagerService extends SystemService {
                 Binder.restoreCallingIdentity(tokenForMum);
             }
 
-            mHandler.post(new ForwardCensoredNotificationRunnable(pkg, userId, currentUser, id,
-                    notification));
+            mHandler.post(new ForwardCensoredNotificationRunnable(pkg, userId, currentUser, id));
         }
     }
 
+    /**
+     * Constructs a censored notification that will be forwarded to the foreground user.
+     * Only the app's name and the intended user are shown in the notification.
+     * The notification comes with an action to switch to the intended user.
+     * The notifications are grouped per user.
+     * These notifications are automatically cleared whenever a user switch occurs.
+     */
     protected class ForwardCensoredNotificationRunnable implements Runnable {
         private final int notificationSummaryId;
         private final String pkg;
         private final int userId;
         private final int currentUserId;
         private final int notificationId;
-        private Notification notificationToCensor;
+        private final String notificationGroupKey;
 
         ForwardCensoredNotificationRunnable(String pkg, int userId, int currentUserId,
-                                            int notificationId, Notification notificationToCensor) {
+                                            int notificationId) {
             this.pkg = pkg;
             this.userId = userId;
             this.currentUserId = currentUserId;
             // Save room for auto group summary id, which is Integer.MAX_VALUE, and for the
             // case when the notification id is exactly the summary.
             this.notificationSummaryId = Integer.MAX_VALUE - 2 - userId;
-            this.notificationId = notificationId == this.notificationSummaryId
+            this.notificationId = notificationId != this.notificationSummaryId
                     ? notificationId
                     : notificationId + 1;
-            this.notificationToCensor = notificationToCensor;
+
+            notificationGroupKey = "USER_" + userId;
         }
 
         @Override
@@ -5000,16 +5007,6 @@ public class NotificationManagerService extends SystemService {
                 }
             } catch (PackageManager.NameNotFoundException e) {
                 // Shouldn't be here; the original recipient should have the package!
-            }
-
-            // Use the app's icon if the current user has the app installed
-            Icon icon = notificationToCensor.getSmallIcon();
-            if (icon.getType() == Icon.TYPE_RESOURCE) {
-                final PackageManager pmCurrentUser = getPackageManagerForUser(getContext(), currentUserId);
-                if (!pmCurrentUser.isPackageAvailable(pkg)) {
-                    // Replace with default icon later
-                    icon = null;
-                }
             }
 
             final String title = (appname != null)
@@ -5032,24 +5029,26 @@ public class NotificationManagerService extends SystemService {
             final int color = getContext().getColor
                     (com.android.internal.R.color.system_notification_accent_color);
 
-            final Notification.Builder censoredNotificationBuilder =
+            final Notification censoredNotification =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
                             .addAction(new Notification.Action.Builder(null /* icon */,
                                     actionButtonTitle, pendingIntentSwitchUser).build())
                             .setAutoCancel(false)
                             .setOngoing(false)
                             .setColor(color)
+                            .setSmallIcon(R.drawable.ic_account_circle)
                             .setContentTitle(title)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
-                            .setGroup("USER_" + userId)
-                            .setWhen(notificationToCensor.when)
-                            .setShowWhen(notificationToCensor.showsTime());
-            if (icon == null) {
-                censoredNotificationBuilder.setSmallIcon(R.drawable.ic_account_circle);
-            } else {
-                censoredNotificationBuilder.setSmallIcon(icon);
-            }
+                            .setGroup(notificationGroupKey)
+                            .setWhen(System.currentTimeMillis())
+                            .setShowWhen(true)
+                            .build();
 
+            enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
+                    MY_UID, MY_PID, TAG_SWITCH_USER, notificationId,
+                    censoredNotification, currentUserId);
+
+            // Create a summary per user.
             final Notification censoredNotificationSummary =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
                             .setContentTitle("Notifications for different user")
@@ -5057,16 +5056,10 @@ public class NotificationManagerService extends SystemService {
                             .setSmallIcon(R.drawable.ic_account_circle)
                             .setColor(color)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
-                            .setGroup("USER_" + userId)
+                            .setGroup(notificationGroupKey)
                             .setGroupSummary(true)
-                            //.setFlag(Notification.FLAG_GROUP_SUMMARY, true)
                             .build();
 
-            enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
-                    MY_UID, MY_PID, TAG_SWITCH_USER, notificationId,
-                    censoredNotificationBuilder.build(), currentUserId);
-
-            // Create a summary per user.
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
                     MY_UID, MY_PID, TAG_SWITCH_USER, notificationSummaryId,
                     censoredNotificationSummary, currentUserId);
