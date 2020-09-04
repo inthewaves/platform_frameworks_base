@@ -5006,7 +5006,7 @@ public class NotificationManagerService extends SystemService {
         @Override
         public void run() {
             final String username = mUm.getUserInfo(userId).name;
-            final PackageManager pmUser = getPackageManagerForUser(getContext(), currentUserId);
+            final PackageManager pmUser = getPackageManagerForUser(getContext(), userId);
             String appname = null;
             try {
                 final ApplicationInfo info = pmUser.getApplicationInfo(pkg,
@@ -5016,22 +5016,26 @@ public class NotificationManagerService extends SystemService {
                     appname = String.valueOf(pmUser.getApplicationLabel(info));
                 }
             } catch (PackageManager.NameNotFoundException e) {
-                // Nothing
+                // Shouldn't be here; the original receipient should have the package!
             }
 
-            final String title = appname == null
-                    ? "Notification for " + username
-                    : "Notification from " + appname + " for " + username;
-
+            // Use the app's icon if the current user has the app installed
             Icon icon = notificationToCensor.getSmallIcon();
             if (icon.getType() == Icon.TYPE_RESOURCE) {
-                Slog.d(TAG, "DEBUG: Checking if " + pkg + " is installed for user " + currentUserId);
                 final PackageManager pmCurrentUser = getPackageManagerForUser(getContext(), currentUserId);
                 if (!pmCurrentUser.isPackageAvailable(pkg)) {
-                    Slog.d(TAG, "DEBUG: Package " + pkg + " is not installed for user " + currentUserId);
+                    // Replace with default icon later
                     icon = null;
                 }
             }
+
+            final String title = (appname != null)
+                    ? getContext().getString(R.string.other_users_notification_title_with_app_name,
+                            appname, username)
+                    : getContext().getString(R.string.other_users_notification_title_no_app_name,
+                            appname);
+            final String actionButtonTitle = getContext()
+                    .getString(R.string.other_users_notification_switch_user_action, username);
 
             final Intent intent = new Intent(ACTION_SWITCH_USER)
                     .putExtra(EXTRA_SWITCH_USER_USERID, userId)
@@ -5039,37 +5043,31 @@ public class NotificationManagerService extends SystemService {
                     .putExtra(EXTRA_SWITCH_USER_CURRENT_USERID, currentUserId)
                     .setPackage(getContext().getPackageName());
 
+            // TODO: Fix the pending intents
             PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
-                    intent, 0);
+                    intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-            final Notification.Builder builder =
+            final Notification.Builder censoredNotificationBuilder =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
-                            //.setFlag(notification.flags, true)
                             .addAction(new Notification.Action.Builder(null /* icon */,
-                                    "Switch to user",
-                                    pendingIntentSwitchUser).build())
+                                    actionButtonTitle, pendingIntentSwitchUser).build())
                             .setAutoCancel(false)
                             .setOngoing(false)
                             .setColor(notificationToCensor.color)
                             .setContentTitle(title)
-                            .setContentText("Tap to open user.")
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
-                            .setGroup("USER_GROUP_" + userId)
+                            .setGroup("USER_" + userId)
                             .setWhen(notificationToCensor.when)
                             .setShowWhen(notificationToCensor.showsTime());
             if (icon == null) {
-                builder.setSmallIcon(R.drawable.ic_account_circle);
+                censoredNotificationBuilder.setSmallIcon(R.drawable.ic_account_circle);
             } else {
-                builder.setSmallIcon(icon);
+                censoredNotificationBuilder.setSmallIcon(icon);
             }
 
-
-            Slog.d(TAG, "DEBUG: Runnable Binder.getCallingUid() " + Binder.getCallingUid());
-            Slog.d(TAG, "DEBUG: Runnable Binder.getCallingPid() " + Binder.getCallingPid());
-            enqueueNotificationInternal(getContext().getPackageName(),
-                    getContext().getPackageName(), Binder.getCallingUid(),
-                    Binder.getCallingPid(), TAG_SWITCH_USER, notificationId,
-                    builder.build(), currentUserId);
+            enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
+                    Binder.getCallingUid(), Binder.getCallingPid(), TAG_SWITCH_USER, notificationId,
+                    censoredNotificationBuilder.build(), currentUserId);
         }
     }
 
