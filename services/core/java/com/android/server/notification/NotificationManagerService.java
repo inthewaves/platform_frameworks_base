@@ -1402,15 +1402,20 @@ public class NotificationManagerService extends SystemService {
             }
             // (String pkg, String tag, int id, int userId)
 
+
+
             final int currentUserId = intent.getIntExtra(EXTRA_SWITCH_USER_CURRENT_USERID, -1);
             if (currentUserId != -1) {
-                try {
-                    getBinderService().cancelNotificationWithTag(getContext().getPackageName(),
-                            TAG_SWITCH_USER, intent.getIntExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, -1),
-                            currentUserId);
-                } catch (RemoteException e) {
+                //try {
+                    // getBinderService().cancelNotificationWithTag(getContext().getPackageName(),
+                    //         TAG_SWITCH_USER, intent.getIntExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, -1),
+                    //         currentUserId);
+                cancelAllNotificationsInt(MY_UID, MY_PID, getContext().getPackageName(),
+                        SystemNotificationChannels.OTHER_USERS, 0, 0, true, currentUserId,
+                        REASON_APP_CANCEL_ALL, null);
+                //} catch (RemoteException e) {
                     // Do nothing, the notification can't be cancelled.
-                }
+                //}
             }
 
             final int userIdToSwitchTo = intent.getIntExtra(EXTRA_SWITCH_USER_USERID, -1);
@@ -4988,10 +4993,11 @@ public class NotificationManagerService extends SystemService {
     }
 
     protected class ForwardCensoredNotificationRunnable implements Runnable {
-        private String pkg;
-        private int userId;
-        private int currentUserId;
-        private int notificationId;
+        private final int notificationSummaryId;
+        private final String pkg;
+        private final int userId;
+        private final int currentUserId;
+        private final int notificationId;
         private Notification notificationToCensor;
 
         ForwardCensoredNotificationRunnable(String pkg, int userId, int currentUserId,
@@ -4999,7 +5005,12 @@ public class NotificationManagerService extends SystemService {
             this.pkg = pkg;
             this.userId = userId;
             this.currentUserId = currentUserId;
-            this.notificationId = notificationId;
+            // Save room for auto group summary id, which is Integer.MAX_VALUE, and for the
+            // case when the notification id is exactly the summary.
+            this.notificationSummaryId = Integer.MAX_VALUE - 2 - userId;
+            this.notificationId = notificationId == this.notificationSummaryId
+                    ? notificationId
+                    : notificationId + 1;
             this.notificationToCensor = notificationToCensor;
         }
 
@@ -5016,7 +5027,7 @@ public class NotificationManagerService extends SystemService {
                     appname = String.valueOf(pmUser.getApplicationLabel(info));
                 }
             } catch (PackageManager.NameNotFoundException e) {
-                // Shouldn't be here; the original receipient should have the package!
+                // Shouldn't be here; the original recipient should have the package!
             }
 
             // Use the app's icon if the current user has the app installed
@@ -5047,13 +5058,16 @@ public class NotificationManagerService extends SystemService {
             PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
                     intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
+            final int color = getContext().getColor
+                    (com.android.internal.R.color.system_notification_accent_color);
+
             final Notification.Builder censoredNotificationBuilder =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
                             .addAction(new Notification.Action.Builder(null /* icon */,
                                     actionButtonTitle, pendingIntentSwitchUser).build())
                             .setAutoCancel(false)
                             .setOngoing(false)
-                            .setColor(notificationToCensor.color)
+                            .setColor(color)
                             .setContentTitle(title)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup("USER_" + userId)
@@ -5065,9 +5079,26 @@ public class NotificationManagerService extends SystemService {
                 censoredNotificationBuilder.setSmallIcon(icon);
             }
 
+            final Notification censoredNotificationSummary =
+                    new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
+                            .setContentTitle("Notifications for different user")
+                            .setContentText("Notifications content? Do you show yp?")
+                            .setSmallIcon(R.drawable.ic_account_circle)
+                            .setColor(color)
+                            .setVisibility(Notification.VISIBILITY_PRIVATE)
+                            .setGroup("USER_" + userId)
+                            .setGroupSummary(true)
+                            //.setFlag(Notification.FLAG_GROUP_SUMMARY, true)
+                            .build();
+
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
-                    Binder.getCallingUid(), Binder.getCallingPid(), TAG_SWITCH_USER, notificationId,
+                    MY_UID, MY_PID, TAG_SWITCH_USER, notificationId,
                     censoredNotificationBuilder.build(), currentUserId);
+
+            // Create a summary per user.
+            enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
+                    MY_UID, MY_PID, TAG_SWITCH_USER, notificationSummaryId,
+                    censoredNotificationSummary, currentUserId);
         }
     }
 
