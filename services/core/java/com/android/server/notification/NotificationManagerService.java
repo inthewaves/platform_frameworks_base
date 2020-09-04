@@ -5040,7 +5040,7 @@ public class NotificationManagerService extends SystemService {
                                 .setWhen(notification.when)
                                 .setShowWhen(notification.showsTime());
                 if (icon == null) {
-                    builder.setSmallIcon(R.drawable.stat_sys_adb);
+                    builder.setSmallIcon(R.drawable.ic_account_circle);
                 } else {
                     builder.setSmallIcon(icon);
                 }
