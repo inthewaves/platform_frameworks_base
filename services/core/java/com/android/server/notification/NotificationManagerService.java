@@ -4952,9 +4952,16 @@ public class NotificationManagerService extends SystemService {
 
         if (currentUser != userId && userId != UserHandle.USER_ALL
                 && showNotificationOnKeyguardForUser(userId, channel)) {
+            final boolean userEnabledCensoredSending = Settings.Secure.getIntForUser(
+                    getContext().getContentResolver(),
+                    Settings.Secure.SEND_CENSORED_NOTIFICATIONS_TO_CURRENT_USER, 0, userId) != 0;
+            if (!userEnabledCensoredSending) {
+                return;
+            }
+
             final long tokenForMum = Binder.clearCallingIdentity();
             try {
-                if (mUm.isSameProfileGroup(currentUser, userId)) {
+                if (mUm.isSameProfileGroup(currentUser, userId) || !mUm.isUserSwitcherEnabled()) {
                     return;
                 }
             } finally {
@@ -4973,7 +4980,7 @@ public class NotificationManagerService extends SystemService {
      * The notifications are grouped per user.
      * These notifications are automatically cleared whenever a user switch occurs.
      */
-    protected class ForwardCensoredNotificationRunnable implements Runnable {
+    private class ForwardCensoredNotificationRunnable implements Runnable {
         private final int notificationSummaryId;
         private final String pkg;
         private final int userId;
