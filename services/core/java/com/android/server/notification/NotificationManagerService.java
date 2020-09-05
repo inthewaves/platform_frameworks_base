@@ -4942,162 +4942,6 @@ public class NotificationManagerService extends SystemService {
         mHandler.post(new EnqueueNotificationRunnable(userId, r));
     }
 
-    /**
-     * Constructs a censored notification that will be forwarded to the foreground user.
-     * Only the app's name and the intended user are shown in the notification.
-     * The notification comes with an action to switch to the intended user.
-     * The notifications are grouped per user.
-     * These notifications are automatically cleared whenever a user switch occurs.
-     */
-    private class ForwardCensoredNotificationRunnable implements Runnable {
-        private final int notificationSummaryId;
-        private final String pkg;
-        private final int userId;
-        private final int notificationId;
-        private final NotificationChannel channel;
-        private final boolean isInterruptive;
-        private final String notificationGroupKey;
-
-        ForwardCensoredNotificationRunnable(String pkg, int userId, int notificationId,
-                                            NotificationChannel channel, boolean isInterruptive) {
-            this.pkg = pkg;
-            this.userId = userId;
-            this.channel = channel;
-            this.isInterruptive = isInterruptive;
-
-            // Group censored notifications by user.
-            notificationGroupKey = "USER_" + userId;
-            // Save room for auto group summary id, which is Integer.MAX_VALUE
-            this.notificationSummaryId = Integer.MAX_VALUE - 1 - userId;
-            this.notificationId = notificationId != this.notificationSummaryId
-                    ? notificationId : 0;
-        }
-
-        @Override
-        public void run() {
-            final int currentUserId = ActivityManager.getCurrentUser();
-
-            if (currentUserId == userId
-                    || userId == UserHandle.USER_ALL
-                    || !showNotificationInChannelOnKeyguardForUser(userId, channel)) {
-                return;
-            }
-            final boolean userEnabledCensoredSending = Settings.Secure.getIntForUser(
-                    getContext().getContentResolver(),
-                    Settings.Secure.SEND_CENSORED_NOTIFICATIONS_TO_CURRENT_USER, 0, userId) != 0;
-            if (!userEnabledCensoredSending) {
-                return;
-            }
-
-            if (mUm.isSameProfileGroup(currentUserId, userId) || !mUm.isUserSwitcherEnabled()) {
-                return;
-            }
-
-            final String username = mUm.getUserInfo(userId).name;
-            // Follows the way the app name is obtained in
-            // com.android.systemui.statusbar.notification.collection.NotificationRowBinderImpl,
-            // in the bindRow method.
-            String appname = pkg;
-            try {
-                final ApplicationInfo info = mPackageManagerClient.getApplicationInfoAsUser(
-                        pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES
-                                | PackageManager.MATCH_DISABLED_COMPONENTS,
-                        userId);
-                if (info != null) {
-                    appname = String.valueOf(mPackageManagerClient.getApplicationLabel(info));
-                }
-            } catch (PackageManager.NameNotFoundException e) {
-                // Shouldn't be here; the original recipient should have the package!
-            }
-
-            final String title = getContext().getString(
-                    R.string.other_users_notification_title, appname, username);
-            final String actionButtonTitle = getContext()
-                    .getString(R.string.other_users_notification_switch_user_action, username);
-
-            final Intent intent = new Intent(ACTION_SWITCH_USER)
-                    .putExtra(EXTRA_SWITCH_USER_USERID, userId)
-                    .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
-                    .setPackage(getContext().getPackageName());
-
-            PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
-                    intent, PendingIntent.FLAG_UPDATE_CURRENT);
-
-            final int color = getContext().getColor
-                    (com.android.internal.R.color.system_notification_accent_color);
-
-            // If the original notification is a silent notification (IMPORTANCE_LOW), we set the
-            // group alert behavior of the censored notification to GROUP_ALERT_SUMMARY. This mutes
-            // the censored notification. However, the summary notification will never alert, as we
-            // set its alert behaviour to GROUP_ALERT_CHILDREN. Therefore, censored notifications
-            // coming from silent notifications don't alert the foreground user.
-            final boolean shouldNotAlert =
-                    channel.getImportance() == IMPORTANCE_LOW || !isInterruptive;
-
-            final Notification censoredNotification =
-                    new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
-                            .addAction(new Notification.Action.Builder(null /* icon */,
-                                    actionButtonTitle, pendingIntentSwitchUser).build())
-                            .setAutoCancel(false)
-                            .setOngoing(false)
-                            .setColor(color)
-                            .setSmallIcon(R.drawable.ic_account_circle)
-                            .setContentTitle(title)
-                            .setVisibility(Notification.VISIBILITY_PRIVATE)
-                            .setGroup(notificationGroupKey)
-                            .setGroupAlertBehavior(shouldNotAlert
-                                    ? GROUP_ALERT_SUMMARY : GROUP_ALERT_CHILDREN)
-                            .setWhen(System.currentTimeMillis())
-                            .setShowWhen(true)
-                            .build();
-
-            enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
-                    MY_UID, MY_PID, TAG_SWITCH_USER, notificationId,
-                    censoredNotification, currentUserId);
-
-            // Create a summary per user.
-            final Notification censoredNotificationSummary =
-                    new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
-                            .setSmallIcon(R.drawable.ic_account_circle)
-                            .setColor(color)
-                            .setVisibility(Notification.VISIBILITY_PRIVATE)
-                            .setGroup(notificationGroupKey)
-                            .setGroupAlertBehavior(GROUP_ALERT_CHILDREN)
-                            .setGroupSummary(true)
-                            .setWhen(System.currentTimeMillis())
-                            .setShowWhen(true)
-                            .build();
-
-            enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
-                    MY_UID, MY_PID, TAG_SWITCH_USER, notificationSummaryId,
-                    censoredNotificationSummary, currentUserId);
-        }
-    }
-
-    private boolean showNotificationInChannelOnKeyguardForUser(int userId,
-                                                               NotificationChannel channel) {
-        if (channel.getLockscreenVisibility() == VISIBILITY_SECRET
-                || channel.getImportance() == IMPORTANCE_MIN
-                || channel.getImportance() == IMPORTANCE_NONE) {
-            return false;
-        }
-
-        final boolean showByUser = Settings.Secure.getIntForUser(
-                getContext().getContentResolver(),
-                Settings.Secure.LOCK_SCREEN_SHOW_NOTIFICATIONS, 0, userId) != 0;
-        if (!showByUser) {
-            return false;
-        }
-
-        if (channel.getImportance() == IMPORTANCE_LOW) {
-            return Settings.Secure.getIntForUser(
-                    getContext().getContentResolver(),
-                    Settings.Secure.LOCK_SCREEN_SHOW_SILENT_NOTIFICATIONS, 1, userId) != 0;
-        }
-
-        return true;
-    }
-
     @VisibleForTesting
     protected void fixNotification(Notification notification, String pkg, int userId)
             throws NameNotFoundException {
@@ -5877,6 +5721,173 @@ public class NotificationManagerService extends SystemService {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Constructs a censored notification that will be enqueued to be forwarded to the foreground
+     * user.
+     * - Only the app's name, the intended user, and time of notification are shown. We can consider
+     *   this as only forwarding lock-screen-visible notifications.
+     * - Every user has to opt in to having their notifications forwarded when they are in the
+     *   background.
+     * - The censored notifications come with actions to switch to the intended user.
+     * - The censored notifications are grouped by user.
+     * - The censored notifications respect the lock screen visibility of the intended user.
+     * - The censored notifications are automatically cancelled whenever a user switch occurs
+     *   (i.e. when a broadcast with Intent.ACTION_USER_BACKGROUND is sent).
+     */
+    private class ForwardCensoredNotificationRunnable implements Runnable {
+        private final int notificationSummaryId;
+        private final String pkg;
+        private final int userId;
+        private final int notificationId;
+        private final NotificationChannel channel;
+        private final boolean isInterruptive;
+        private final String notificationGroupKey;
+
+        ForwardCensoredNotificationRunnable(String pkg, int userId, int notificationId,
+                                            NotificationChannel channel, boolean isInterruptive) {
+            this.pkg = pkg;
+            this.userId = userId;
+            this.channel = channel;
+            this.isInterruptive = isInterruptive;
+
+            // Group the censored notifications by user.
+            notificationGroupKey = "USER_" + userId;
+            // Save room for auto group summary id, which is Integer.MAX_VALUE
+            this.notificationSummaryId = Integer.MAX_VALUE - 1 - userId;
+            this.notificationId = notificationId != this.notificationSummaryId
+                    ? notificationId : 0;
+        }
+
+        @Override
+        public void run() {
+            final int currentUserId = ActivityManager.getCurrentUser();
+            if (currentUserId == userId
+                    || userId == UserHandle.USER_ALL
+                    || !showNotificationChannelOnKeyguardForUser(userId, channel)) {
+                return;
+            }
+
+            final boolean userEnabledCensoredSending = Settings.Secure.getIntForUser(
+                    getContext().getContentResolver(),
+                    Settings.Secure.SEND_CENSORED_NOTIFICATIONS_TO_CURRENT_USER, 0, userId) != 0;
+            if (!userEnabledCensoredSending) {
+                return;
+            }
+
+            // Work profiles already show their notification to their owner. Also, since these
+            // notifications have switch user actions, do not show them if the switcher is disabled.
+            if (mUm.isSameProfileGroup(currentUserId, userId) || !mUm.isUserSwitcherEnabled()) {
+                return;
+            }
+
+            final String username = mUm.getUserInfo(userId).name;
+            // Follows the way the app name is obtained in
+            // com.android.systemui.statusbar.notification.collection.NotificationRowBinderImpl,
+            // in the bindRow method.
+            String appname = pkg;
+            try {
+                final ApplicationInfo info = mPackageManagerClient.getApplicationInfoAsUser(
+                        pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES
+                                | PackageManager.MATCH_DISABLED_COMPONENTS,
+                        userId);
+                if (info != null) {
+                    appname = String.valueOf(mPackageManagerClient.getApplicationLabel(info));
+                }
+            } catch (PackageManager.NameNotFoundException e) {
+                // Shouldn't be here; the original recipient should have the package!
+            }
+
+            final String title = getContext().getString(
+                    R.string.other_users_notification_title, appname, username);
+            final String actionButtonTitle = getContext()
+                    .getString(R.string.other_users_notification_switch_user_action, username);
+
+            final int color = getContext().getColor
+                    (com.android.internal.R.color.system_notification_accent_color);
+
+            final Intent intent = new Intent(ACTION_SWITCH_USER)
+                    .putExtra(EXTRA_SWITCH_USER_USERID, userId)
+                    .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
+                    .setPackage(getContext().getPackageName());
+
+            PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
+                    intent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+            // If the original notification is a silent notification (IMPORTANCE_LOW), we set the
+            // group alert behavior of the censored notification to GROUP_ALERT_SUMMARY. This mutes
+            // the censored notification. However, the summary notification will never alert, as we
+            // set its alert behaviour to GROUP_ALERT_CHILDREN. Therefore, censored notifications
+            // coming from silent notifications don't alert the foreground user.
+            final boolean shouldNotAlert =
+                    channel.getImportance() == IMPORTANCE_LOW || !isInterruptive;
+
+            final Notification censoredNotification =
+                    new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
+                            .addAction(new Notification.Action.Builder(null /* icon */,
+                                    actionButtonTitle, pendingIntentSwitchUser).build())
+                            .setAutoCancel(false)
+                            .setOngoing(false)
+                            .setColor(color)
+                            .setSmallIcon(R.drawable.ic_account_circle)
+                            .setContentTitle(title)
+                            .setVisibility(Notification.VISIBILITY_PRIVATE)
+                            .setGroup(notificationGroupKey)
+                            .setGroupAlertBehavior(shouldNotAlert
+                                    ? GROUP_ALERT_SUMMARY : GROUP_ALERT_CHILDREN)
+                            .setWhen(System.currentTimeMillis())
+                            .setShowWhen(true)
+                            .build();
+
+            enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
+                    MY_UID, MY_PID, TAG_SWITCH_USER, notificationId,
+                    censoredNotification, currentUserId);
+
+            // Group the censored notifications per user.
+            final Notification censoredNotificationSummary =
+                    new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
+                            .setSmallIcon(R.drawable.ic_account_circle)
+                            .setColor(color)
+                            .setVisibility(Notification.VISIBILITY_PRIVATE)
+                            .setGroup(notificationGroupKey)
+                            .setGroupAlertBehavior(GROUP_ALERT_CHILDREN)
+                            .setGroupSummary(true)
+                            .setWhen(System.currentTimeMillis())
+                            .setShowWhen(true)
+                            .build();
+
+            enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
+                    MY_UID, MY_PID, TAG_SWITCH_USER, notificationSummaryId,
+                    censoredNotificationSummary, currentUserId);
+        }
+
+        private boolean showNotificationChannelOnKeyguardForUser(int userId,
+                                                                 NotificationChannel channel) {
+            // Guard against notifications channels hiding from lock screen, silent notifications
+            // that are minimized (ambient notifications), and no-importance notifications.
+            if (channel.getLockscreenVisibility() == VISIBILITY_SECRET
+                    || channel.getImportance() == IMPORTANCE_MIN
+                    || channel.getImportance() == IMPORTANCE_NONE) {
+                return false;
+            }
+
+            // User has to opt in under Multiple users in Settings.
+            final boolean showByUser = Settings.Secure.getIntForUser(
+                    getContext().getContentResolver(),
+                    Settings.Secure.LOCK_SCREEN_SHOW_NOTIFICATIONS, 0, userId) != 0;
+            if (!showByUser) {
+                return false;
+            }
+
+            if (channel.getImportance() == IMPORTANCE_LOW) {
+                return Settings.Secure.getIntForUser(
+                        getContext().getContentResolver(),
+                        Settings.Secure.LOCK_SCREEN_SHOW_SILENT_NOTIFICATIONS, 1, userId) != 0;
+            }
+
+            return true;
         }
     }
 
