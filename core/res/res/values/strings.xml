@@ -5428,7 +5428,6 @@
 
     <!-- Text shown when viewing channel settings for notifications from other users. -->
     <string name="notification_channel_other_users">Other users</string>
-    <string name="other_users_notification_title_with_app_name">Notification from <xliff:g id="app_name" example="Messages">%1$s</xliff:g> for <xliff:g id="username" example="John">%2$s</xliff:g></string>
-    <string name="other_users_notification_title_no_app_name">Notification for <xliff:g id="username" example="John">%1$s</xliff:g></string>
+    <string name="other_users_notification_title">Notification from <xliff:g id="app_name" example="Messages">%1$s</xliff:g> for <xliff:g id="username" example="John">%2$s</xliff:g></string>
     <string name="other_users_notification_switch_user_action">Switch to <xliff:g id="username" example="John">%1$s</xliff:g></string>
 </resources>

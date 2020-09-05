@@ -5000,24 +5000,24 @@ public class NotificationManagerService extends SystemService {
         @Override
         public void run() {
             final String username = mUm.getUserInfo(userId).name;
-            final PackageManager pmUser = getPackageManagerForUser(getContext(), userId);
-            String appname = null;
+            // Follows the way the app name is obtained in
+            // com.android.systemui.statusbar.notification.collection.NotificationRowBinderImpl,
+            // in the bindRow method.
+            String appname = pkg;
             try {
-                final ApplicationInfo info = pmUser.getApplicationInfo(pkg,
-                        PackageManager.MATCH_UNINSTALLED_PACKAGES
-                                | PackageManager.MATCH_DISABLED_COMPONENTS);
+                final ApplicationInfo info = mPackageManagerClient.getApplicationInfoAsUser(
+                        pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES
+                                | PackageManager.MATCH_DISABLED_COMPONENTS,
+                        userId);
                 if (info != null) {
-                    appname = String.valueOf(pmUser.getApplicationLabel(info));
+                    appname = String.valueOf(mPackageManagerClient.getApplicationLabel(info));
                 }
             } catch (PackageManager.NameNotFoundException e) {
                 // Shouldn't be here; the original recipient should have the package!
             }
 
-            final String title = (appname != null)
-                    ? getContext().getString(R.string.other_users_notification_title_with_app_name,
-                            appname, username)
-                    : getContext().getString(R.string.other_users_notification_title_no_app_name,
-                            appname);
+            final String title = getContext().getString(
+                    R.string.other_users_notification_title, appname, username);
             final String actionButtonTitle = getContext()
                     .getString(R.string.other_users_notification_switch_user_action, username);
 
@@ -5026,13 +5026,17 @@ public class NotificationManagerService extends SystemService {
                     .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
                     .setPackage(getContext().getPackageName());
 
-            // TODO: Fix the pending intents
             PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
                     intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
             final int color = getContext().getColor
                     (com.android.internal.R.color.system_notification_accent_color);
 
+            // If the original notification is a silent notification (IMPORTANCE_LOW), we set the
+            // group alert behavior of the censored notification to GROUP_ALERT_SUMMARY. This mutes
+            // the censored notification. However, the summary notification will never alert, as we
+            // set its alert behaviour to GROUP_ALERT_CHILDREN. Therefore, censored notifications
+            // coming from silent notifications don't alert the foreground user.
             final Notification censoredNotification =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
                             .addAction(new Notification.Action.Builder(null /* icon */,
@@ -5057,15 +5061,14 @@ public class NotificationManagerService extends SystemService {
             // Create a summary per user.
             final Notification censoredNotificationSummary =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
-                            .setContentTitle("Notifications for different user")
-                            .setContentText("Notifications content? Do you show yp?")
                             .setSmallIcon(R.drawable.ic_account_circle)
                             .setColor(color)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup(notificationGroupKey)
                             .setGroupAlertBehavior(GROUP_ALERT_CHILDREN)
                             .setGroupSummary(true)
-                            .setOnlyAlertOnce(true)
+                            .setWhen(System.currentTimeMillis())
+                            .setShowWhen(true)
                             .build();
 
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
@@ -5095,28 +5098,6 @@ public class NotificationManagerService extends SystemService {
         }
 
         return true;
-    }
-
-    /**
-     * @return a PackageManger for userId or if userId is < 0 (USER_ALL etc) then
-     *         return PackageManager for mContext
-     */
-    private PackageManager getPackageManagerForUser(Context context, int userId) {
-        Context contextForUser = context;
-        // UserHandle defines special userId as negative values, e.g. USER_ALL
-        if (userId >= 0) {
-            try {
-                // Create a context for the correct user so if a package isn't installed
-                // for user 0 we can still load information about the package.
-                contextForUser =
-                        context.createPackageContextAsUser(context.getPackageName(),
-                                Context.CONTEXT_RESTRICTED,
-                                new UserHandle(userId));
-            } catch (NameNotFoundException e) {
-                // Shouldn't fail to find the package name
-            }
-        }
-        return contextForUser.getPackageManager();
     }
 
     @VisibleForTesting
