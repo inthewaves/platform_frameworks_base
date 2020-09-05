@@ -149,7 +149,6 @@ import android.content.pm.ParceledListSlice;
 import android.content.pm.UserInfo;
 import android.content.res.Resources;
 import android.database.ContentObserver;
-import android.graphics.drawable.Icon;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.AudioManagerInternal;
@@ -4941,36 +4940,6 @@ public class NotificationManagerService extends SystemService {
         }
 
         mHandler.post(new EnqueueNotificationRunnable(userId, r));
-
-        final int currentUser;
-        final long token = Binder.clearCallingIdentity();
-        try {
-            currentUser = ActivityManager.getCurrentUser();
-        } finally {
-            Binder.restoreCallingIdentity(token);
-        }
-
-        if (currentUser != userId && userId != UserHandle.USER_ALL
-                && showNotificationOnKeyguardForUser(userId, channel)) {
-            final boolean userEnabledCensoredSending = Settings.Secure.getIntForUser(
-                    getContext().getContentResolver(),
-                    Settings.Secure.SEND_CENSORED_NOTIFICATIONS_TO_CURRENT_USER, 0, userId) != 0;
-            if (!userEnabledCensoredSending) {
-                return;
-            }
-
-            final long tokenForMum = Binder.clearCallingIdentity();
-            try {
-                if (mUm.isSameProfileGroup(currentUser, userId) || !mUm.isUserSwitcherEnabled()) {
-                    return;
-                }
-            } finally {
-                Binder.restoreCallingIdentity(tokenForMum);
-            }
-
-            mHandler.post(new ForwardCensoredNotificationRunnable(pkg, userId, currentUser, id,
-                    channel.getImportance()));
-        }
     }
 
     /**
@@ -4984,17 +4953,17 @@ public class NotificationManagerService extends SystemService {
         private final int notificationSummaryId;
         private final String pkg;
         private final int userId;
-        private final int currentUserId;
         private final int notificationId;
-        private final int importance;
+        private final NotificationChannel channel;
+        private final boolean isInterruptive;
         private final String notificationGroupKey;
 
-        ForwardCensoredNotificationRunnable(String pkg, int userId, int currentUserId,
-                                            int notificationId, int importance) {
+        ForwardCensoredNotificationRunnable(String pkg, int userId, int notificationId,
+                                            NotificationChannel channel, boolean isInterruptive) {
             this.pkg = pkg;
             this.userId = userId;
-            this.currentUserId = currentUserId;
-            this.importance = importance;
+            this.channel = channel;
+            this.isInterruptive = isInterruptive;
 
             // Group censored notifications by user.
             notificationGroupKey = "USER_" + userId;
@@ -5006,6 +4975,24 @@ public class NotificationManagerService extends SystemService {
 
         @Override
         public void run() {
+            final int currentUserId = ActivityManager.getCurrentUser();
+
+            if (currentUserId == userId
+                    || userId == UserHandle.USER_ALL
+                    || !showNotificationInChannelOnKeyguardForUser(userId, channel)) {
+                return;
+            }
+            final boolean userEnabledCensoredSending = Settings.Secure.getIntForUser(
+                    getContext().getContentResolver(),
+                    Settings.Secure.SEND_CENSORED_NOTIFICATIONS_TO_CURRENT_USER, 0, userId) != 0;
+            if (!userEnabledCensoredSending) {
+                return;
+            }
+
+            if (mUm.isSameProfileGroup(currentUserId, userId) || !mUm.isUserSwitcherEnabled()) {
+                return;
+            }
+
             final String username = mUm.getUserInfo(userId).name;
             // Follows the way the app name is obtained in
             // com.android.systemui.statusbar.notification.collection.NotificationRowBinderImpl,
@@ -5044,6 +5031,9 @@ public class NotificationManagerService extends SystemService {
             // the censored notification. However, the summary notification will never alert, as we
             // set its alert behaviour to GROUP_ALERT_CHILDREN. Therefore, censored notifications
             // coming from silent notifications don't alert the foreground user.
+            final boolean shouldNotAlert =
+                    channel.getImportance() == IMPORTANCE_LOW || !isInterruptive;
+
             final Notification censoredNotification =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
                             .addAction(new Notification.Action.Builder(null /* icon */,
@@ -5055,7 +5045,7 @@ public class NotificationManagerService extends SystemService {
                             .setContentTitle(title)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup(notificationGroupKey)
-                            .setGroupAlertBehavior(importance == IMPORTANCE_LOW
+                            .setGroupAlertBehavior(shouldNotAlert
                                     ? GROUP_ALERT_SUMMARY : GROUP_ALERT_CHILDREN)
                             .setWhen(System.currentTimeMillis())
                             .setShowWhen(true)
@@ -5084,10 +5074,11 @@ public class NotificationManagerService extends SystemService {
         }
     }
 
-    private boolean showNotificationOnKeyguardForUser(int userId, NotificationChannel channel) {
+    private boolean showNotificationInChannelOnKeyguardForUser(int userId,
+                                                               NotificationChannel channel) {
         if (channel.getLockscreenVisibility() == VISIBILITY_SECRET
-            || channel.getImportance() == IMPORTANCE_MIN
-            || channel.getImportance() == IMPORTANCE_NONE) {
+                || channel.getImportance() == IMPORTANCE_MIN
+                || channel.getImportance() == IMPORTANCE_NONE) {
             return false;
         }
 
@@ -5845,6 +5836,15 @@ public class NotificationManagerService extends SystemService {
                                             n, hasAutoGroupSummaryLocked(n));
                                 }
                             });
+                        }
+
+                        if (!r.isHidden()) {
+                            mHandler.post(new ForwardCensoredNotificationRunnable(
+                                    r.sbn.getPackageName(),
+                                    r.getUser().getIdentifier(),
+                                    r.sbn.getId(),
+                                    r.getChannel(),
+                                    r.isInterruptive()));
                         }
                     } else {
                         Slog.e(TAG, "Not posting notification without small icon: " + notification);
