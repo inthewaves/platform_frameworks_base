@@ -5682,8 +5682,13 @@ public class NotificationManagerService extends SystemService {
                             });
                         }
 
-                        if (!r.isHidden()) {
-                            mHandler.post(new ForwardCensoredNotificationRunnable(
+                        // Initial checks:
+                        // Only consider posting the censored notif runnable for notifs that are
+                        // not hidden, non-update notifications, and update notifications that will
+                        // alert more than once (fixes issues like OpenVPN status updates spamming).
+                        if (!r.isHidden() && (!r.isUpdate
+                                || (notification.flags & FLAG_ONLY_ALERT_ONCE) == 0)) {
+                            mHandler.post(new EnqueueCensoredNotificationRunnable(
                                     r.sbn.getPackageName(),
                                     r.getUser().getIdentifier(),
                                     r.sbn.getId(),
@@ -5737,7 +5742,7 @@ public class NotificationManagerService extends SystemService {
      * - The censored notifications are automatically cancelled whenever a user switch occurs
      *   (i.e. when a broadcast with Intent.ACTION_USER_BACKGROUND is sent).
      */
-    private class ForwardCensoredNotificationRunnable implements Runnable {
+    private class EnqueueCensoredNotificationRunnable implements Runnable {
         private final int notificationSummaryId;
         private final String pkg;
         private final int userId;
@@ -5746,7 +5751,7 @@ public class NotificationManagerService extends SystemService {
         private final boolean isInterruptive;
         private final String notificationGroupKey;
 
-        ForwardCensoredNotificationRunnable(String pkg, int userId, int notificationId,
+        EnqueueCensoredNotificationRunnable(String pkg, int userId, int notificationId,
                                             NotificationChannel channel, boolean isInterruptive) {
             this.pkg = pkg;
             this.userId = userId;
