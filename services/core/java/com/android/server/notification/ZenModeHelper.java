@@ -88,7 +88,7 @@ import java.util.Objects;
  */
 public class ZenModeHelper {
     static final String TAG = "ZenModeHelper";
-    static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
+    static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG) || true;
 
     // The amount of time rules instances can exist without their owning app being installed.
     private static final int RULE_INSTANCE_GRACE_PERIOD = 1000 * 60 * 60 * 72;
@@ -759,6 +759,24 @@ public class ZenModeHelper {
         if (policy == null || mConfig == null) return;
         synchronized (mConfig) {
             final ZenModeConfig newConfig = mConfig.copy();
+
+            for (int i = 0; i < 12; i++) {
+                Log.d(TAG, "DEBUG: mConfigs.get(" + i + ") is " + mConfigs.get(i));
+                if (mConfigs.get(i) != null) {
+                    Log.d(TAG, "DEBUG: mConfigs.get(" + i + ").manualRule is " + mConfigs.get(i).manualRule);
+                }
+                if (i == 0) i = 9;
+            }
+
+            for (int i = 0; i < 12; i++) {
+                final ZenModeConfig copy = mConfigs.get(i).copy();
+                Log.d(TAG, "DEBUG: mConfigs.get(" + i + ").copy() is " + copy);
+                if (copy != null) {
+                    Log.d(TAG, "DEBUG: mConfigs.get(" + i + ").copy().manualRule is " + copy.manualRule);
+                }
+                if (i == 0) i = 9;
+            }
+
             newConfig.applyNotificationPolicy(policy);
             setConfigLocked(newConfig, null, "setNotificationPolicy");
         }
@@ -797,6 +815,19 @@ public class ZenModeHelper {
             return mConfig.copy();
         }
     }
+
+    /**
+     * @return a copy of the zen mode configuration for userId
+     */
+    ZenModeConfig getConfigForUser(int userId) {
+        synchronized (mConfig) {
+            //final ZenModeConfig config = mConfigs.get(userId);
+            //final ZenModeConfig configCopy = config.copy();
+            return mConfigs.get(userId).copy();
+        }
+    }
+
+
 
     /**
      * @return a copy of the zen mode consolidated policy

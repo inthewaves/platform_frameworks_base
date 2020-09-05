@@ -86,11 +86,13 @@ import static android.service.notification.NotificationListenerService.REASON_UN
 import static android.service.notification.NotificationListenerService.REASON_USER_STOPPED;
 import static android.service.notification.NotificationListenerService.TRIM_FULL;
 import static android.service.notification.NotificationListenerService.TRIM_LIGHT;
+import static android.service.notification.ZenPolicy.STATE_DISALLOW;
 import static android.util.StatsLogInternal.BUBBLE_DEVELOPER_ERROR_REPORTED__ERROR__ACTIVITY_INFO_MISSING;
 import static android.util.StatsLogInternal.BUBBLE_DEVELOPER_ERROR_REPORTED__ERROR__ACTIVITY_INFO_NOT_RESIZABLE;
 import static android.util.StatsLogInternal.BUBBLE_DEVELOPER_ERROR_REPORTED__ERROR__DOCUMENT_LAUNCH_NOT_ALWAYS;
 import static android.view.WindowManager.LayoutParams.TYPE_TOAST;
 
+import static com.android.internal.widget.LockPatternUtils.StrongAuthTracker.STRONG_AUTH_REQUIRED_AFTER_USER_LOCKDOWN;
 import static com.android.server.am.PendingIntentRecord.FLAG_ACTIVITY_SENDER;
 import static com.android.server.am.PendingIntentRecord.FLAG_BROADCAST_SENDER;
 import static com.android.server.am.PendingIntentRecord.FLAG_SERVICE_SENDER;
@@ -232,6 +234,7 @@ import com.android.internal.util.FastXmlSerializer;
 import com.android.internal.util.Preconditions;
 import com.android.internal.util.XmlUtils;
 import com.android.internal.util.function.TriPredicate;
+import com.android.internal.widget.LockPatternUtils;
 import com.android.server.DeviceIdleController;
 import com.android.server.EventLogTags;
 import com.android.server.IoThread;
@@ -281,7 +284,7 @@ import java.util.function.BiConsumer;
 /** {@hide} */
 public class NotificationManagerService extends SystemService {
     static final String TAG = "NotificationService";
-    static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG);
+    static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG) || true;
     public static final boolean ENABLE_CHILD_NOTIFICATIONS
             = SystemProperties.getBoolean("debug.child_notifs", true);
 
@@ -5686,14 +5689,15 @@ public class NotificationManagerService extends SystemService {
                         // Only consider posting the censored notif runnable for notifs that are
                         // not hidden, non-update notifications, and update notifications that will
                         // alert more than once (fixes issues like OpenVPN status updates spamming).
-                        if (!r.isHidden() && (!r.isUpdate
-                                || (notification.flags & FLAG_ONLY_ALERT_ONCE) == 0)) {
+                        if (!r.isHidden()
+                                && !shouldMuteNotificationLocked(r)) {
                             mHandler.post(new EnqueueCensoredNotificationRunnable(
                                     r.sbn.getPackageName(),
                                     r.getUser().getIdentifier(),
                                     r.sbn.getId(),
                                     r.getChannel(),
-                                    r.isInterruptive()));
+                                    r.isInterruptive(),
+                                    r.getSuppressedVisualEffects()));
                         }
                     } else {
                         Slog.e(TAG, "Not posting notification without small icon: " + notification);
@@ -5749,14 +5753,18 @@ public class NotificationManagerService extends SystemService {
         private final int notificationId;
         private final NotificationChannel channel;
         private final boolean isInterruptive;
+        private final int suppressedVisualEffects;
+
         private final String notificationGroupKey;
 
         EnqueueCensoredNotificationRunnable(String pkg, int userId, int notificationId,
-                                            NotificationChannel channel, boolean isInterruptive) {
+                                            NotificationChannel channel, boolean isInterruptive,
+                                            int suppressedVisualEffects) {
             this.pkg = pkg;
             this.userId = userId;
             this.channel = channel;
             this.isInterruptive = isInterruptive;
+            this.suppressedVisualEffects = suppressedVisualEffects;
 
             // Group the censored notifications by user.
             notificationGroupKey = "USER_" + userId;
@@ -5771,7 +5779,8 @@ public class NotificationManagerService extends SystemService {
             final int currentUserId = ActivityManager.getCurrentUser();
             if (currentUserId == userId
                     || userId == UserHandle.USER_ALL
-                    || !showNotificationChannelOnKeyguardForUser(userId, channel)) {
+                    || !showNotificationChannelOnKeyguardForUser(userId, channel,
+                            suppressedVisualEffects)) {
                 return;
             }
 
@@ -5868,8 +5877,16 @@ public class NotificationManagerService extends SystemService {
                     censoredNotificationSummary, currentUserId);
         }
 
+        /**
+         * See
+         * {@link com.android.systemui.statusbar.NotificationLockscreenUserManagerImpl#shouldHideNotifications(int)}
+         * {@link com.android.systemui.statusbar.NotificationLockscreenUserManagerImpl#shouldShowOnKeyguard(NotificationEntry)}
+         * These methods aren't static methods and they rely on a lot of their internal functions,
+         * so we have to extract the logic from them into here.
+         */
         private boolean showNotificationChannelOnKeyguardForUser(int userId,
-                                                                 NotificationChannel channel) {
+                                                                 NotificationChannel channel,
+                                                                 int suppressedVisualEffects) {
             // Guard against notifications channels hiding from lock screen, silent notifications
             // that are minimized (ambient notifications), and no-importance notifications.
             if (channel.getLockscreenVisibility() == VISIBILITY_SECRET
@@ -5883,6 +5900,56 @@ public class NotificationManagerService extends SystemService {
                     getContext().getContentResolver(),
                     Settings.Secure.LOCK_SCREEN_SHOW_NOTIFICATIONS, 0, userId) != 0;
             if (!showByUser) {
+                return false;
+            }
+
+            // ILockSettings service = ILockSettings.Stub.asInterface(
+            //                    ServiceManager.getService("lock_settings"));
+
+            final int strongAuthFlags =
+                    new LockPatternUtils(getContext()).getStrongAuthForUser(userId);
+            if ((strongAuthFlags & STRONG_AUTH_REQUIRED_AFTER_USER_LOCKDOWN) != 0) {
+                return false;
+            }
+
+            /*
+            Context userContext;
+            try {
+                userContext = getContext().createPackageContextAsUser("android",
+                        Context.CONTEXT_RESTRICTED, new UserHandle(userId));
+            } catch (PackageManager.NameNotFoundException e) {
+                Log.e(TAG, "failed to create package context for lookups", e);
+            }
+             */
+
+            // Account for the user's do not disturb
+            final ZenModeConfig userConfig = mZenModeHelper.getConfigForUser(userId);
+
+            if (userConfig.manualRule == null) {
+                Slog.d(TAG, "DEBUG: zen manual rule is null? Why???");
+            } else if (userConfig.manualRule.zenPolicy == null) {
+                Slog.d(TAG, "DEBUG: zen manual rule policy is null? Why???");
+            }
+
+            int suppressed = 0;
+            if (userConfig != null && userConfig.manualRule != null && userConfig.manualRule.zenPolicy != null) {
+                Slog.d(TAG, "DEBUG: zen manual rule detected");
+                suppressed = userConfig.manualRule.zenPolicy.getVisualEffectNotificationList();
+            } else if (userConfig.automaticRules != null) {
+                Slog.d(TAG, "DEBUG: checking automatic zen rules");
+                for (ZenModeConfig.ZenRule automaticRule : userConfig.automaticRules.values()) {
+                    if (automaticRule.isAutomaticActive()) {
+                        Slog.d(TAG, "DEBUG: Automatic rule detected");
+                        suppressed = automaticRule.zenPolicy.getVisualEffectNotificationList();
+                        break;
+                    }
+                }
+            }
+            Slog.d(TAG, "DEBUG: suppressed is " + suppressed);
+            Slog.d(TAG, "DEBUG: userConfig.suppressedVisualEffects is " + userConfig.suppressedVisualEffects);
+            Slog.d(TAG, "DEBUG: the suppressedVisualEffects from the record is " + suppressedVisualEffects);
+            if (suppressed == STATE_DISALLOW) {
+                Slog.d(TAG, "Not sending censored notificatiosn due to DND");
                 return false;
             }
 
@@ -6285,23 +6352,27 @@ public class NotificationManagerService extends SystemService {
         // Suppressed because it's a silent update
         final Notification notification = record.getNotification();
         if (record.isUpdate && (notification.flags & FLAG_ONLY_ALERT_ONCE) != 0) {
+            Slog.d(TAG, "DEBUG: shouldMuteNotificationLocked: muting update since it's alert once");
             return true;
         }
 
         // muted by listener
         final String disableEffects = disableNotificationEffects(record);
         if (disableEffects != null) {
+            Slog.d(TAG, "DEBUG: shouldMuteNotificationLocked: muted by listener");
             ZenLog.traceDisableEffects(record, disableEffects);
             return true;
         }
 
         // suppressed due to DND
         if (record.isIntercepted()) {
+            Slog.d(TAG, "DEBUG: shouldMuteNotificationLocked: intercepted");
             return true;
         }
 
         // Suppressed because another notification in its group handles alerting
         if (record.sbn.isGroup()) {
+            Slog.d(TAG, "DEBUG: shouldMuteNotificationLocked: grouped");
             if (notification.suppressAlertingDueToGrouping()) {
                 return true;
             }
