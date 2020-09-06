@@ -5793,20 +5793,29 @@ public class NotificationManagerService extends SystemService {
             return CensoredSendState.DONT_SEND;
         }
 
-        return getZenModeSendState(userId, record);
+        return getSendStateFromDoNotDisturb(userId, record);
     }
 
     /**
-     * Accounts for the user's do not disturb notification list settings.
+     * Accounts for the user's do not disturb settings.
      * For use in determining if a notification should be forwarded to the foreground user in
      * censored form.
+     * - If user A has DND off, then user B will get notifications normally
+     *   ({@link CensoredSendState#SEND_NORMAL}).
+     * - If user A has DND on and isn't hiding notifications from notification shade/lock screen,
+     *   then user B will get muted censored notifications ({@link CensoredSendState#SEND_QUIET}).
+     * - If user A has DND on and is hiding notifications, then user B will not get any censored
+     *   notifications {@link CensoredSendState#DONT_SEND}.
+     * - If user A has DND on and a notification they receive bypasses DND, then user B will get the
+     *   notification normally ({@link CensoredSendState#SEND_NORMAL}).
      *
      * @param userId The identifier of the user to check the DND settings for.
      * @param record The notification that is checked to see if it should be intercepted by DND.
-     * @return Whether the notification is intercepted by DND according to the user's DND settings.
+     * @return The censored sending state. If DND is off, then send normally, possibly with
+     * notification
      */
     @GuardedBy("mNotificationLock")
-    private CensoredSendState getZenModeSendState(int userId, NotificationRecord record) {
+    private CensoredSendState getSendStateFromDoNotDisturb(int userId, NotificationRecord record) {
         // ZenModeHelper works by only focusing on the foreground user's do not disturb settings.
         // We need to make new methods in ZenModeHelper such as getConfigCopyForUser to expose a way
         // to get the config and interception results per user.
@@ -5815,10 +5824,11 @@ public class NotificationManagerService extends SystemService {
             return CensoredSendState.SEND_NORMAL;
         }
 
-        return mZenModeHelper.shouldInterceptFromLockScreenWithConfig(record, userConfig);
+        return mZenModeHelper.getCensoredSendingStateWithZenModeConfig(record, userConfig);
     }
 
     /**
+     * Determines if the notification should show up on the lock screen for the user.
      * For use in determining if a notification should be forwarded to the foreground user in
      * censored form.
      *
@@ -5865,15 +5875,18 @@ public class NotificationManagerService extends SystemService {
      * Constructs a censored notification that will be enqueued to be forwarded to the foreground
      * user.
      * - Only the app's name, the intended user, and time of notification are shown.
-     * - Every user has to opt in to having their notifications forwarded when they are in the
-     *   background.
-     * - A censored notifications comes with an action to switch to the intended user.
+     * - Every user has to opt in to having their notifications forwarded when they are active
+     *   in the background.
+     * - A censored notification comes with an action to switch to the intended user.
      * - The censored notifications are grouped by user.
      * - The censored notifications respect the lock screen visibility and the do not disturb
      *   settings of the original recipient user, but the Runnable does not enforce it. This
      *   Runnable should be run after {@link #shouldSendCensoredNotificationToForegroundUser}.
+     * - The censored notifications will be quiet for the current user if the original notification
+     *   is quiet. This includes silent channels and do not disturb muting.
      * - The censored notifications are automatically cancelled whenever a user switch occurs
-     *   (i.e. when a broadcast with Intent.ACTION_USER_BACKGROUND is sent).
+     *   (i.e. when a broadcast with Intent.ACTION_USER_BACKGROUND is sent) and whenever users
+     *   are removed.
      */
     private class EnqueueCensoredNotificationRunnable implements Runnable {
         private final int notificationSummaryId;
@@ -5881,18 +5894,19 @@ public class NotificationManagerService extends SystemService {
         private final int userId;
         private final int notificationId;
         private final NotificationChannel channel;
-        private final boolean isInterruptive;
+        private final boolean isVisuallyInterruptive;
         private final CensoredSendState censoredSendState;
 
         private final String notificationGroupKey;
 
         EnqueueCensoredNotificationRunnable(String pkg, int userId, int notificationId,
-                                            NotificationChannel channel, boolean isInterruptive,
+                                            NotificationChannel channel,
+                                            boolean isVisuallyInterruptive,
                                             CensoredSendState state) {
             this.pkg = pkg;
             this.userId = userId;
             this.channel = channel;
-            this.isInterruptive = isInterruptive;
+            this.isVisuallyInterruptive = isVisuallyInterruptive;
             this.censoredSendState = state;
 
             // Group the censored notifications by user.
@@ -5942,14 +5956,15 @@ public class NotificationManagerService extends SystemService {
             final PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(),
                     0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
+            // This sets the group alert behavior.
             // If the original notification is a silent notification (IMPORTANCE_LOW), we set the
             // group alert behavior of the censored notification to GROUP_ALERT_SUMMARY. This mutes
-            // the censored notification. However, the summary notification will never alert, as we
+            // the censored notification. The summary notification will never alert, as we
             // set its alert behaviour to GROUP_ALERT_CHILDREN. Therefore, censored notifications
-            // coming from silent notifications don't alert the foreground user.
-            final boolean shouldNotAlertCurrentUser =
+            // coming from silent notifications will never audibly notify the foreground user.
+            final boolean shouldNotMakeSoundForCurrentUser =
                     censoredSendState == CensoredSendState.SEND_QUIET
-                    || (channel.getImportance() == IMPORTANCE_LOW) || !isInterruptive;
+                    || (channel.getImportance() == IMPORTANCE_LOW) || !isVisuallyInterruptive;
 
             final Notification censoredNotification =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
@@ -5962,8 +5977,9 @@ public class NotificationManagerService extends SystemService {
                             .setContentTitle(title)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup(notificationGroupKey)
-                            .setGroupAlertBehavior(shouldNotAlertCurrentUser
+                            .setGroupAlertBehavior(shouldNotMakeSoundForCurrentUser
                                     ? GROUP_ALERT_SUMMARY : GROUP_ALERT_CHILDREN)
+                            .setGroupSummary(false)
                             .setWhen(System.currentTimeMillis())
                             .setShowWhen(true)
                             .build();

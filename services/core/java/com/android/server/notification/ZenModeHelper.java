@@ -178,17 +178,17 @@ public class ZenModeHelper {
     }
 
     /**
-     * Determines if a notification record should be suppressed from the lock screen for the
-     * given config. For use in determining if a notification should be forwarded to the foreground
-     * user in censored form.
+     * Determines the censored notification sending state depending on the ZenModeConfig given. For
+     * use in determining if a notification should be forwarded to the foreground user in censored
+     * form.
      *
      * No mConfig lock is needed; `config` is assumed to be a copy.
      * See {@link #computeZenMode()} for where the logic for computing zen mode was taken from.
      * See {@link #updateConsolidatedPolicy(String)} for where the logic for creating a consolidated
      * policy was taken from.
      */
-    CensoredSendState shouldInterceptFromLockScreenWithConfig(NotificationRecord record,
-                                                              ZenModeConfig config) {
+    CensoredSendState getCensoredSendingStateWithZenModeConfig(NotificationRecord record,
+                                                               ZenModeConfig config) {
         // Create the consolidated policy for the user, and also compute the zen mode.
         final ZenPolicy zenPolicy = new ZenPolicy();
         int zenMode = Global.ZEN_MODE_OFF;
@@ -223,8 +223,9 @@ public class ZenModeHelper {
 
         final NotificationManager.Policy policy = config.toNotificationPolicy(zenPolicy);
         final boolean shouldIntercept = mFiltering.shouldIntercept(zenMode, policy, record);
-
         if (shouldIntercept) {
+            // If hidden from lock screen don't send it; otherwise, since it has been intercepted,
+            // it has been muted by DND and we should send it quietly.
             if ((policy.suppressedVisualEffects &
                     NotificationManager.Policy.SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
                 return CensoredSendState.DONT_SEND;
