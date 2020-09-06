@@ -5688,7 +5688,6 @@ public class NotificationManagerService extends SystemService {
                         // censored copy of it to the foreground user (if the foreground user
                         // differs from the intended recipient).
                         if (shouldSendCensoredNotificationToForegroundUser(r)) {
-                            Slog.d(TAG, "DEBUG: Sending censored notifs now for " + r.toString());
                             mHandler.post(new EnqueueCensoredNotificationRunnable(
                                     r.sbn.getPackageName(),
                                     r.getUser().getIdentifier(),
@@ -5749,11 +5748,9 @@ public class NotificationManagerService extends SystemService {
         // Work profiles already can show their notification to their owner. Also, since these
         // notifications have switch user actions, do not show them if the switcher is disabled.
         if (mUm.isSameProfileGroup(currentUserId, userId) || !mUm.isUserSwitcherEnabled()) {
-            Slog.d(TAG, "DEBUG: failed censored sending; " + (mUm.isSameProfileGroup(currentUserId, userId) ? "same profile group" : "user switcher disabled"));
             return false;
         }
 
-        Slog.d(TAG, "DEBUG: Checking censored notifs now for " + record.toString());
         if (record.isHidden()) {
             return false;
         }
@@ -5799,12 +5796,10 @@ public class NotificationManagerService extends SystemService {
         // to get the config and interception results per user.
         final ZenModeConfig userConfig = mZenModeHelper.getConfigCopyForUser(userId);
         if (userConfig == null) {
-            Slog.d(TAG, "DEBUG: Missing zen config");
             return false;
         }
 
         if (userConfig.manualRule != null) {
-            Slog.d(TAG, "DEBUG: manualRule");
             // If user is using manual DND, then suppressedVisualEffects is used. The manual
             // rule has no ZenPolicy set up, so applying the consolidated policy inherits the
             // ZenModeConfig's properties for the unset fields of the ZenPolicy. Therefore,
@@ -5812,11 +5807,9 @@ public class NotificationManagerService extends SystemService {
             if ((userConfig.suppressedVisualEffects & SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
                 final boolean shouldIntercept = mZenModeHelper.shouldInterceptWithConfigAndRule(
                         record, userConfig, userConfig.manualRule);
-                Slog.d(TAG, "DEBUG: manualRule intercept? " + shouldIntercept);
                 return shouldIntercept;
             }
         } else if (userConfig.automaticRules != null) {
-            Slog.d(TAG, "DEBUG: automaticRules");
             ZenModeConfig.ZenRule activeAutomaticRule = null;
             for (ZenModeConfig.ZenRule automaticRule : userConfig.automaticRules.values()) {
                 // Note: There's a bug where if an scheduled DND is supposed to turn on in a
@@ -5824,7 +5817,6 @@ public class NotificationManagerService extends SystemService {
                 // system is switched to that user. This is probably a result of how the system
                 // was originally designed.
                 if (automaticRule.isAutomaticActive()) {
-                    Slog.d(TAG, "DEBUG: automaticRules active found");
                     activeAutomaticRule = automaticRule;
                     break;
                 }
@@ -5833,12 +5825,10 @@ public class NotificationManagerService extends SystemService {
                     == ZenPolicy.STATE_DISALLOW) {
                 final boolean shouldIntercept = mZenModeHelper.shouldInterceptWithConfigAndRule(
                         record, userConfig, activeAutomaticRule);
-                Slog.d(TAG, "DEBUG: automaticRules shouldIntercept? " + shouldIntercept);
                 return shouldIntercept;
             }
         }
 
-        Slog.d(TAG, "DEBUG: passed zen checks");
         return false;
     }
 
@@ -5860,36 +5850,28 @@ public class NotificationManagerService extends SystemService {
         if (channel.getLockscreenVisibility() == VISIBILITY_SECRET
                 || channel.getImportance() == IMPORTANCE_MIN
                 || channel.getImportance() == IMPORTANCE_NONE) {
-            if (channel.getLockscreenVisibility() == VISIBILITY_SECRET) Slog.d(TAG, "DEBUG: not forwarding censored; channel lockscreen vis is secret");
-            if (channel.getImportance() == IMPORTANCE_MIN) Slog.d(TAG, "DEBUG: not forwarding censored; channel.getImportance() == IMPORTANCE_MIN");
-            if (channel.getImportance() == IMPORTANCE_NONE) Slog.d(TAG, "DEBUG: not forwarding censored; channel.getImportance() == IMPORTANCE_NONE");
             return false;
         }
 
         final boolean showByUser = Settings.Secure.getIntForUser(getContext().getContentResolver(),
                 Settings.Secure.LOCK_SCREEN_SHOW_NOTIFICATIONS, 0, userId) != 0;
         if (!showByUser) {
-            Slog.d(TAG, "DEBUG: not forwarding; user disabled lock screen notifs");
             return false;
         }
 
         // Handles lockdown button.
         final int strongAuthFlags = new LockPatternUtils(getContext()).getStrongAuthForUser(userId);
         if ((strongAuthFlags & STRONG_AUTH_REQUIRED_AFTER_USER_LOCKDOWN) != 0) {
-            Slog.d(TAG, "DEBUG: not forwarding; user on lockdown");
             return false;
         }
 
         if (channel.getImportance() == IMPORTANCE_LOW) {
-            Slog.d(TAG, "DEBUG: low importance; checking silent option");
             if (Settings.Secure.getIntForUser(getContext().getContentResolver(),
                     Settings.Secure.LOCK_SCREEN_SHOW_SILENT_NOTIFICATIONS, 1, userId) != 0)
-                Slog.d(TAG, "DEBUG: LOCK_SCREEN_SHOW_SILENT_NOTIFICATIONS is 1");
             return Settings.Secure.getIntForUser(getContext().getContentResolver(),
                     Settings.Secure.LOCK_SCREEN_SHOW_SILENT_NOTIFICATIONS, 1, userId) != 0;
         }
 
-        Slog.d(TAG, "DEBUG: passed keyguard check");
         return true;
     }
 
