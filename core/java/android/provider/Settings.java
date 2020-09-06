@@ -8174,8 +8174,8 @@ public final class Settings {
                 "lock_screen_show_silent_notifications";
 
         /**
-         * Indiates whether the notifications for one user should be sent to the
-         * current user in censored form (app name and name of the user are shown).
+         * Indicates whether the notifications for one user should be sent to the
+         * current user in censored form (app name, name of the user, time received are shown).
          * <p>
          * Type: int (0 for false, 1 for true)
          *
