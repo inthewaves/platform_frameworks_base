@@ -1379,6 +1379,12 @@ public class NotificationManagerService extends SystemService {
                 mConditionProviders.onUserRemoved(userId);
                 mAssistants.onUserRemoved(userId);
                 handleSavePolicyFile();
+
+                // Clear censored notifications in case the removed user forwarded any.
+                final int currentUserId = ActivityManager.getCurrentUser();
+                cancelAllNotificationsInt(MY_UID, MY_PID, getContext().getPackageName(),
+                        SystemNotificationChannels.OTHER_USERS, 0, 0, true, currentUserId,
+                        REASON_USER_STOPPED, null);
             } else if (action.equals(Intent.ACTION_USER_UNLOCKED)) {
                 final int userId = intent.getIntExtra(Intent.EXTRA_USER_HANDLE, USER_NULL);
                 mUserProfiles.updateCache(context);
