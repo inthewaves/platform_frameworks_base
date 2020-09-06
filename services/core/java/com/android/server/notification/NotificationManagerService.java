@@ -24,9 +24,6 @@ import static android.app.Notification.FLAG_FOREGROUND_SERVICE;
 import static android.app.Notification.FLAG_NO_CLEAR;
 import static android.app.Notification.FLAG_ONGOING_EVENT;
 import static android.app.Notification.FLAG_ONLY_ALERT_ONCE;
-import static android.app.Notification.GROUP_ALERT_CHILDREN;
-import static android.app.Notification.GROUP_ALERT_SUMMARY;
-import static android.app.Notification.VISIBILITY_SECRET;
 import static android.app.NotificationManager.ACTION_APP_BLOCK_STATE_CHANGED;
 import static android.app.NotificationManager.ACTION_NOTIFICATION_CHANNEL_BLOCK_STATE_CHANGED;
 import static android.app.NotificationManager.ACTION_NOTIFICATION_CHANNEL_GROUP_BLOCK_STATE_CHANGED;
@@ -5841,7 +5838,7 @@ public class NotificationManagerService extends SystemService {
         final NotificationChannel channel = record.getChannel();
         // Guard against notifications channels hiding from lock screen, silent notifications
         // that are minimized (ambient notifications), and no-importance notifications.
-        if (channel.getLockscreenVisibility() == VISIBILITY_SECRET
+        if (channel.getLockscreenVisibility() == Notification.VISIBILITY_SECRET
                 || channel.getImportance() == IMPORTANCE_MIN
                 || channel.getImportance() == IMPORTANCE_NONE) {
             return false;
@@ -5974,7 +5971,8 @@ public class NotificationManagerService extends SystemService {
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup(notificationGroupKey)
                             .setGroupAlertBehavior(shouldNotMakeSoundForCurrentUser
-                                    ? GROUP_ALERT_SUMMARY : GROUP_ALERT_CHILDREN)
+                                    ? Notification.GROUP_ALERT_SUMMARY
+                                    : Notification.GROUP_ALERT_CHILDREN)
                             .setGroupSummary(false)
                             .setWhen(System.currentTimeMillis())
                             .setShowWhen(true)
@@ -5991,7 +5989,7 @@ public class NotificationManagerService extends SystemService {
                             .setColor(color)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup(notificationGroupKey)
-                            .setGroupAlertBehavior(GROUP_ALERT_CHILDREN)
+                            .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
                             .setGroupSummary(true)
                             .setWhen(System.currentTimeMillis())
                             .setShowWhen(true)
