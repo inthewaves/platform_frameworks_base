@@ -5924,18 +5924,16 @@ public class NotificationManagerService extends SystemService {
 
             final String title = getContext().getString(
                     R.string.other_users_notification_title, appname, username);
-            final String actionButtonTitle = getContext()
-                    .getString(R.string.other_users_notification_switch_user_action, username);
+            final String actionButtonTitle = getContext().getString(
+                    R.string.other_users_notification_switch_user_action, username);
 
-            final int color = getContext().getColor
-                    (com.android.internal.R.color.system_notification_accent_color);
+            final int color = getContext().getColor(
+                    com.android.internal.R.color.system_notification_accent_color);
 
             final Intent intent = new Intent(ACTION_SWITCH_USER)
                     .putExtra(EXTRA_SWITCH_USER_USERID, userId)
-                    .setPackage(getContext().getPackageName());
-
-            // intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY)
-
+                    .setPackage(getContext().getPackageName())
+                    .addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY);
             PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
                     intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
@@ -5945,7 +5943,7 @@ public class NotificationManagerService extends SystemService {
             // set its alert behaviour to GROUP_ALERT_CHILDREN. Therefore, censored notifications
             // coming from silent notifications don't alert the foreground user.
             final boolean shouldNotAlert =
-                    channel.getImportance() == IMPORTANCE_LOW || !isInterruptive;
+                    (channel.getImportance() == IMPORTANCE_LOW) || !isInterruptive;
 
             final Notification censoredNotification =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
