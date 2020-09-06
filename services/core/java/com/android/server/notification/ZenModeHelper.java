@@ -188,7 +188,7 @@ public class ZenModeHelper {
      * policy was taken from.
      */
     CensoredSendState shouldInterceptFromLockScreenWithConfig(NotificationRecord record,
-                                                    ZenModeConfig config) {
+                                                              ZenModeConfig config) {
         // Create the consolidated policy for the user, and also compute the zen mode.
         final ZenPolicy zenPolicy = new ZenPolicy();
         int zenMode = Global.ZEN_MODE_OFF;
@@ -222,15 +222,16 @@ public class ZenModeHelper {
         }
 
         final NotificationManager.Policy policy = config.toNotificationPolicy(zenPolicy);
-        // Only consider intercepting when the policy hides notifications from the lock screen
-        if ((policy.suppressedVisualEffects &
-                NotificationManager.Policy.SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
-            return mFiltering.shouldInterceptNoLogging(zenMode, policy, record);
-        }
+        final boolean shouldIntercept = mFiltering.shouldIntercept(zenMode, policy, record);
 
-        // Send normally for apps bypassing DND
-        return (record.getPackagePriority() == Notification.PRIORITY_MAX)
-                ? CensoredSendState.SEND_NORMAL : CensoredSendState.SEND_QUIET;
+        if (shouldIntercept) {
+            if ((policy.suppressedVisualEffects &
+                    NotificationManager.Policy.SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
+                return CensoredSendState.DONT_SEND;
+            }
+            return CensoredSendState.SEND_QUIET;
+        }
+        return CensoredSendState.SEND_NORMAL;
     }
 
     public void addCallback(Callback callback) {

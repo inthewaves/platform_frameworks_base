@@ -5793,7 +5793,7 @@ public class NotificationManagerService extends SystemService {
             return CensoredSendState.DONT_SEND;
         }
 
-        return shouldNotificationBeHiddenLockScreenDnd(userId, record);
+        return getZenModeSendState(userId, record);
     }
 
     /**
@@ -5806,7 +5806,7 @@ public class NotificationManagerService extends SystemService {
      * @return Whether the notification is intercepted by DND according to the user's DND settings.
      */
     @GuardedBy("mNotificationLock")
-    private CensoredSendState shouldNotificationBeHiddenLockScreenDnd(int userId, NotificationRecord record) {
+    private CensoredSendState getZenModeSendState(int userId, NotificationRecord record) {
         // ZenModeHelper works by only focusing on the foreground user's do not disturb settings.
         // We need to make new methods in ZenModeHelper such as getConfigCopyForUser to expose a way
         // to get the config and interception results per user.
