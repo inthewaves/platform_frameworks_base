@@ -5692,16 +5692,13 @@ public class NotificationManagerService extends SystemService {
                         // Now that the notification is posted, we can now consider sending a
                         // censored copy of it to the foreground user (if the foreground user
                         // differs from the intended recipient).
-                        final CensoredSendState state =
-                                shouldSendCensoredNotificationToForegroundUser(r);
-                        if (state != CensoredSendState.DONT_SEND) {
+                        if (shouldSendCensoredNotificationToForegroundUser(r)) {
                             mHandler.post(new EnqueueCensoredNotificationRunnable(
                                     r.sbn.getPackageName(),
                                     r.getUser().getIdentifier(),
                                     r.sbn.getId(),
                                     r.getChannel(),
-                                    r.isInterruptive(),
-                                    state));
+                                    r.isInterruptive()));
                         }
                     } else {
                         Slog.e(TAG, "Not posting notification without small icon: " + notification);
@@ -5737,17 +5734,12 @@ public class NotificationManagerService extends SystemService {
         }
     }
 
-    enum CensoredSendState {
-        DONT_SEND, SEND_NORMAL, SEND_QUIET
-    }
-
     @GuardedBy("mNotificationLock")
-    private CensoredSendState shouldSendCensoredNotificationToForegroundUser(
-            NotificationRecord record) {
+    private boolean shouldSendCensoredNotificationToForegroundUser(NotificationRecord record) {
         final int userId = record.getUser().getIdentifier();
         final int currentUserId = ActivityManager.getCurrentUser();
         if (currentUserId == userId || userId == UserHandle.USER_ALL) {
-            return CensoredSendState.DONT_SEND;
+            return false;
         }
 
         // Sending user has to opt in under Multiple users in Settings.
@@ -5755,45 +5747,42 @@ public class NotificationManagerService extends SystemService {
                 getContext().getContentResolver(),
                 Settings.Secure.SEND_CENSORED_NOTIFICATIONS_TO_CURRENT_USER, 0, userId) != 0;
         if (!userEnabledCensoredSending) {
-            return CensoredSendState.DONT_SEND;
+            return false;
         }
 
         // Work profiles already can show their notification to their owner. Also, since these
         // notifications have switch user actions, do not show them if the switcher is disabled.
         if (mUm.isSameProfileGroup(currentUserId, userId) || !mUm.isUserSwitcherEnabled()) {
-            return CensoredSendState.DONT_SEND;
+            return false;
         }
 
         if (record.isHidden()) {
-            return CensoredSendState.DONT_SEND;
+            return false;
         }
 
         // Handles reoccurring update notifications (fixes issues like OpenVPN status updates
         // spamming).
         final Notification notification = record.getNotification();
         if (record.isUpdate && (notification.flags & FLAG_ONLY_ALERT_ONCE) != 0) {
-            return CensoredSendState.DONT_SEND;
+            return false;
         }
 
         // Muted by listener
         final String disableEffects = disableNotificationEffects(record);
         if (disableEffects != null) {
-            return CensoredSendState.DONT_SEND;
+            return false;
         }
 
         // Suppressed because another notification in its group handles alerting
         if (record.sbn.isGroup()) {
             if (notification.suppressAlertingDueToGrouping()) {
-                return CensoredSendState.DONT_SEND;
+                return false;
             }
         }
 
         // Check lock screen display and do not disturb lock screen settings.
-        if (!shouldShowNotificationOnKeyguardForUser(userId, record)) {
-            return CensoredSendState.DONT_SEND;
-        }
-
-        return shouldNotificationBeHiddenLockScreenDnd(userId, record);
+        return shouldShowNotificationOnKeyguardForUser(userId, record)
+                && !shouldNotificationBeHiddenLockScreenDnd(userId, record);
     }
 
     /**
@@ -5806,13 +5795,13 @@ public class NotificationManagerService extends SystemService {
      * @return Whether the notification is intercepted by DND according to the user's DND settings.
      */
     @GuardedBy("mNotificationLock")
-    private CensoredSendState shouldNotificationBeHiddenLockScreenDnd(int userId, NotificationRecord record) {
+    private boolean shouldNotificationBeHiddenLockScreenDnd(int userId, NotificationRecord record) {
         // ZenModeHelper works by only focusing on the foreground user's do not disturb settings.
         // We need to make new methods in ZenModeHelper such as getConfigCopyForUser to expose a way
         // to get the config and interception results per user.
         final ZenModeConfig userConfig = mZenModeHelper.getConfigCopyForUser(userId);
         if (userConfig == null) {
-            return CensoredSendState.SEND_NORMAL;
+            return false;
         }
 
         return mZenModeHelper.shouldInterceptFromLockScreenWithConfig(record, userConfig);
@@ -5882,18 +5871,15 @@ public class NotificationManagerService extends SystemService {
         private final int notificationId;
         private final NotificationChannel channel;
         private final boolean isInterruptive;
-        private final CensoredSendState censoredSendState;
 
         private final String notificationGroupKey;
 
         EnqueueCensoredNotificationRunnable(String pkg, int userId, int notificationId,
-                                            NotificationChannel channel, boolean isInterruptive,
-                                            CensoredSendState state) {
+                                            NotificationChannel channel, boolean isInterruptive) {
             this.pkg = pkg;
             this.userId = userId;
             this.channel = channel;
             this.isInterruptive = isInterruptive;
-            this.censoredSendState = state;
 
             // Group the censored notifications by user.
             notificationGroupKey = "USER_" + userId;
@@ -5905,9 +5891,6 @@ public class NotificationManagerService extends SystemService {
 
         @Override
         public void run() {
-            // Sanity check
-            if (censoredSendState == CensoredSendState.DONT_SEND) return;
-
             final int currentUserId = ActivityManager.getCurrentUser();
 
             final String username = mUm.getUserInfo(userId).name;
@@ -5947,9 +5930,8 @@ public class NotificationManagerService extends SystemService {
             // the censored notification. However, the summary notification will never alert, as we
             // set its alert behaviour to GROUP_ALERT_CHILDREN. Therefore, censored notifications
             // coming from silent notifications don't alert the foreground user.
-            final boolean shouldNotAlertCurrentUser =
-                    censoredSendState == CensoredSendState.SEND_QUIET
-                    || (channel.getImportance() == IMPORTANCE_LOW) || !isInterruptive;
+            final boolean shouldNotAlert =
+                    (channel.getImportance() == IMPORTANCE_LOW) || !isInterruptive;
 
             final Notification censoredNotification =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
@@ -5962,7 +5944,7 @@ public class NotificationManagerService extends SystemService {
                             .setContentTitle(title)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup(notificationGroupKey)
-                            .setGroupAlertBehavior(shouldNotAlertCurrentUser
+                            .setGroupAlertBehavior(shouldNotAlert
                                     ? GROUP_ALERT_SUMMARY : GROUP_ALERT_CHILDREN)
                             .setWhen(System.currentTimeMillis())
                             .setShowWhen(true)
