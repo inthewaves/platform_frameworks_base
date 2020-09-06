@@ -5947,7 +5947,8 @@ public class NotificationManagerService extends SystemService {
             final Intent intent = new Intent(ACTION_SWITCH_USER)
                     .putExtra(EXTRA_SWITCH_USER_USERID, userId)
                     .setPackage(getContext().getPackageName())
-                    .addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY);
+                    .addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY
+                                | Intent.FLAG_RECEIVER_EXCLUDE_BACKGROUND);
             final PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(),
                     0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
