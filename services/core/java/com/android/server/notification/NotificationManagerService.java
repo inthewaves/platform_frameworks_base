@@ -5866,13 +5866,14 @@ public class NotificationManagerService extends SystemService {
     /**
      * Constructs a censored notification that will be enqueued to be forwarded to the foreground
      * user.
-     * - Only the app's name, the intended user, and time of notification are shown. We can consider
-     *   this as only forwarding lock-screen-visible notifications.
+     * - Only the app's name, the intended user, and time of notification are shown.
      * - Every user has to opt in to having their notifications forwarded when they are in the
      *   background.
-     * - The censored notifications come with actions to switch to the intended user.
+     * - A censored notifications comes with an action to switch to the intended user.
      * - The censored notifications are grouped by user.
-     * - The censored notifications respect the lock screen visibility of the intended user.
+     * - The censored notifications respect the lock screen visibility and the do not disturb
+     *   settings of the original recipient user, but the Runnable does not enforce it. This
+     *   Runnable should be run after {@link #shouldSendCensoredNotificationToForegroundUser}.
      * - The censored notifications are automatically cancelled whenever a user switch occurs
      *   (i.e. when a broadcast with Intent.ACTION_USER_BACKGROUND is sent).
      */
@@ -5934,8 +5935,8 @@ public class NotificationManagerService extends SystemService {
                     .putExtra(EXTRA_SWITCH_USER_USERID, userId)
                     .setPackage(getContext().getPackageName())
                     .addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY);
-            PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
-                    intent, PendingIntent.FLAG_UPDATE_CURRENT);
+            final PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(),
+                    0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
             // If the original notification is a silent notification (IMPORTANCE_LOW), we set the
             // group alert behavior of the censored notification to GROUP_ALERT_SUMMARY. This mutes
