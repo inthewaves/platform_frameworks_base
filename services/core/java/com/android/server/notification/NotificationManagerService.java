@@ -5774,9 +5774,9 @@ public class NotificationManagerService extends SystemService {
             }
         }
 
-        // Check lock screen display and do not disturb settings.
+        // Check lock screen display and do not disturb lock screen settings.
         return shouldShowNotificationOnKeyguardForUser(userId, record)
-                && !shouldNotificationBeHiddenByDndForUser(userId, record);
+                && !shouldNotificationBeHiddenLockScreenDnd(userId, record);
     }
 
     /**
@@ -5789,7 +5789,7 @@ public class NotificationManagerService extends SystemService {
      * @return Whether the notification is intercepted by DND according to the user's DND settings.
      */
     @GuardedBy("mNotificationLock")
-    private boolean shouldNotificationBeHiddenByDndForUser(int userId, NotificationRecord record) {
+    private boolean shouldNotificationBeHiddenLockScreenDnd(int userId, NotificationRecord record) {
         // ZenModeHelper works by only focusing on the foreground user's do not disturb settings.
         // We need to make new methods in ZenModeHelper such as getConfigCopyForUser to expose a way
         // to get the config and interception results per user.
