@@ -5685,10 +5685,10 @@ public class NotificationManagerService extends SystemService {
                             });
                         }
 
-                        // Now that the notification is posted, consider sending a censored
-                        // copy of it to the foreground user, if the foreground user differs from
-                        // the intended recipient.
-                        if (shouldForwardCensoredNotification(r)) {
+                        // Now that the notification is posted, we can now consider sending a
+                        // censored copy of it to the foreground user (if the foreground user
+                        // differs from the intended recipient).
+                        if (shouldSendCensoredNotificationToForegroundUser(r)) {
                             mHandler.post(new EnqueueCensoredNotificationRunnable(
                                     r.sbn.getPackageName(),
                                     r.getUser().getIdentifier(),
@@ -5730,7 +5730,7 @@ public class NotificationManagerService extends SystemService {
         }
     }
 
-    private boolean shouldForwardCensoredNotification(NotificationRecord record) {
+    private boolean shouldSendCensoredNotificationToForegroundUser(NotificationRecord record) {
         final int userId = record.getUser().getIdentifier();
         final int currentUserId = ActivityManager.getCurrentUser();
         if (currentUserId == userId || userId == UserHandle.USER_ALL) {
@@ -5751,7 +5751,7 @@ public class NotificationManagerService extends SystemService {
             return false;
         }
 
-        // Handles hidden notifications, muted notifications, reoccuring update notifications
+        // Handles hidden notifications, muted notifications, reoccurring update notifications
         // (fixes issues like OpenVPN status updates spamming).
         if (record.isHidden() || shouldMuteNotificationLocked(record)) {
             // Interception/do not disturb doesn't work properly for multiple users receiving
@@ -5768,47 +5768,48 @@ public class NotificationManagerService extends SystemService {
             }
         }
 
-        // Check lock screen privacy and do not disturb settings.
+        // Check lock screen display and do not disturb settings.
         return shouldShowNotificationOnKeyguardForUser(userId, record)
                 && !shouldNotificationBeInterceptedForUser(userId, record);
     }
 
     /**
-     * Accounts for the user's do not disturb visual settings.
+     * Accounts for the user's do not disturb notification list settings.
+     * For use in determining if a notification should be forwarded to the foreground user in
+     * censored form.
      *
      * @param userId The identifier of the user to check the DND settings for.
      * @param record The notification that is checked to see if it should be intercepted by DND.
      * @return Whether the notification is intercepted by DND according to the user's DND settings.
      */
     private boolean shouldNotificationBeInterceptedForUser(int userId, NotificationRecord record) {
-        // mZenModeHelper works by only focusing on the foreground user's do not disturb settings.
-        // We needed to get new methods to expose a way to get the config and interception settings
-        // per user.
+        // ZenModeHelper works by only focusing on the foreground user's do not disturb settings.
+        // We need to make new methods in ZenModeHelper such as getConfigCopyForUser to expose a way
+        // to get the config and interception results per user.
         final ZenModeConfig userConfig = mZenModeHelper.getConfigCopyForUser(userId);
-        if (userConfig != null && userConfig.manualRule != null) {
+        if (userConfig == null) {
+            return false;
+        }
+
+        if (userConfig.manualRule != null) {
             Slog.d(TAG, "DEBUG: zen manual rule detected");
-            // If they're using manual rule, then suppressedVisualEffects is used. The manual
+            // If user is using manual DND, then suppressedVisualEffects is used. The manual
             // rule has no ZenPolicy set up, so applying the consolidated policy inherits the
             // ZenModeConfig's properties for the unset fields of the ZenPolicy. Therefore,
             // userConfig.suppressedVisualEffects is used.
             if ((userConfig.suppressedVisualEffects & SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
                 final boolean shouldIntercept = mZenModeHelper.shouldInterceptWithConfigAndRule(
                         record, userConfig, userConfig.manualRule);
-                if (shouldIntercept) {
-                    Slog.d(TAG, "not sending censored notification due to manual DND");
-                }
                 return shouldIntercept;
             }
-        } else if (userConfig != null && userConfig.automaticRules != null) {
-            Slog.d(TAG, "DEBUG: checking automatic zen rules");
+        } else if (userConfig.automaticRules != null) {
             ZenModeConfig.ZenRule activeAutomaticRule = null;
             for (ZenModeConfig.ZenRule automaticRule : userConfig.automaticRules.values()) {
                 // Note: There's a bug where if an scheduled DND is supposed to turn on in a
                 // background user, automaticRule.isAutomaticActive() will stay false until the
-                // system is switched to that user. This is probably again a leftover of how
-                // the system was designed.
+                // system is switched to that user. This is probably a result of how the system
+                // was originally designed.
                 if (automaticRule.isAutomaticActive()) {
-                    Slog.d(TAG, "DEBUG: Automatic rule detected");
                     activeAutomaticRule = automaticRule;
                     break;
                 }
@@ -5817,17 +5818,18 @@ public class NotificationManagerService extends SystemService {
                     == ZenPolicy.STATE_DISALLOW) {
                 final boolean shouldIntercept = mZenModeHelper.shouldInterceptWithConfigAndRule(
                         record, userConfig, activeAutomaticRule);
-                if (shouldIntercept) {
-                    Slog.d(TAG, "not sending censored notification due to automatic DND");
-                }
                 return shouldIntercept;
             }
         }
+
         return false;
     }
 
     /**
-     * See
+     * For use in determining if a notification should be forwarded to the foreground user in
+     * censored form.
+     *
+     * For similar logic, see
      * {@link com.android.systemui.statusbar.NotificationLockscreenUserManagerImpl#shouldHideNotifications(int)}
      * {@link com.android.systemui.statusbar.NotificationLockscreenUserManagerImpl#shouldShowOnKeyguard(NotificationEntry)}
      * These methods aren't static methods and they rely on a lot of their internal functions,
@@ -6377,28 +6379,24 @@ public class NotificationManagerService extends SystemService {
         // Suppressed because it's a silent update
         final Notification notification = record.getNotification();
         if (record.isUpdate && (notification.flags & FLAG_ONLY_ALERT_ONCE) != 0) {
-            Slog.d(TAG, "DEBUG: shouldMuteNotificationLocked: muting update since it's alert once");
             return true;
         }
 
         // muted by listener
         final String disableEffects = disableNotificationEffects(record);
         if (disableEffects != null) {
-            Slog.d(TAG, "DEBUG: shouldMuteNotificationLocked: muted by listener");
             ZenLog.traceDisableEffects(record, disableEffects);
             return true;
         }
 
         // suppressed due to DND
         if (record.isIntercepted()) {
-            Slog.d(TAG, "DEBUG: shouldMuteNotificationLocked: intercepted");
             return true;
         }
 
         // Suppressed because another notification in its group handles alerting
         if (record.sbn.isGroup()) {
             if (notification.suppressAlertingDueToGrouping()) {
-                Slog.d(TAG, "DEBUG: shouldMuteNotificationLocked: group suppress");
                 return true;
             }
         }
@@ -6406,7 +6404,6 @@ public class NotificationManagerService extends SystemService {
         // Suppressed for being too recently noisy
         final String pkg = record.sbn.getPackageName();
         if (mUsageStats.isAlertRateLimited(pkg)) {
-            Slog.e(TAG, "Muting recently noisy " + record.getKey());
             return true;
         }
 
