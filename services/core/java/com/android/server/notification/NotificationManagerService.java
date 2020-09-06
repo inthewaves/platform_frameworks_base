@@ -5776,7 +5776,7 @@ public class NotificationManagerService extends SystemService {
 
         // Check lock screen display and do not disturb settings.
         return shouldShowNotificationOnKeyguardForUser(userId, record)
-                && !shouldNotificationBeInterceptedForUser(userId, record);
+                && !shouldNotificationBeHiddenByDndForUser(userId, record);
     }
 
     /**
@@ -5784,16 +5784,12 @@ public class NotificationManagerService extends SystemService {
      * For use in determining if a notification should be forwarded to the foreground user in
      * censored form.
      *
-     * See {@link ZenModeConfig#getDescription(Context, boolean, ZenModeConfig, boolean)} or
-     * {@link com.android.settings.notification.ZenModeSettingsFooterPreferenceController} for where
-     * some of this log was extracted.
-     *
      * @param userId The identifier of the user to check the DND settings for.
      * @param record The notification that is checked to see if it should be intercepted by DND.
      * @return Whether the notification is intercepted by DND according to the user's DND settings.
      */
     @GuardedBy("mNotificationLock")
-    private boolean shouldNotificationBeInterceptedForUser(int userId, NotificationRecord record) {
+    private boolean shouldNotificationBeHiddenByDndForUser(int userId, NotificationRecord record) {
         // ZenModeHelper works by only focusing on the foreground user's do not disturb settings.
         // We need to make new methods in ZenModeHelper such as getConfigCopyForUser to expose a way
         // to get the config and interception results per user.
@@ -5802,99 +5798,7 @@ public class NotificationManagerService extends SystemService {
             return false;
         }
 
-        ZenModeConfig.ZenRule activeAutomaticZenRule;
-        boolean shouldCheckDndNeeded = false;
-        long latestEndTime = -1;
-        if (userConfig.manualRule != null) {
-            if (userConfig.manualRule.enabler != null) {
-                // app triggered manual rule
-                final String appName = ZenModeConfig.getOwnerCaption(getContext(),
-                        userConfig.manualRule.enabler);
-                if (!appName.isEmpty()) {
-                    shouldCheckDndNeeded = true;
-                    activeAutomaticZenRule = null;
-                }
-            } else {
-                final Uri id = userConfig.manualRule.conditionId;
-                if (id == null) {
-                    // DND manually triggered to remain on forever until off
-                    return determineInterception(userConfig, null, record);
-                } else {
-                    latestEndTime = ZenModeConfig.tryParseCountdownConditionId(id);
-                    if (latestEndTime > 0) {
-                        shouldCheckDndNeeded = true;
-                        activeAutomaticZenRule = null;
-                    }
-                }
-            }
-        }
-        // Note: There's a bug where if an scheduled DND is supposed to turn on in a
-        // background user, automaticRule.isAutomaticActive() will stay false until the
-        // system is switched to that user. This is probably a result of how the system
-        // was originally designed.
-        if (userConfig.automaticRules != null) {
-            for (ZenModeConfig.ZenRule automaticRule : userConfig.automaticRules.values()) {
-                if (!automaticRule.isAutomaticActive()) {
-                    continue;
-                }
-
-                if (ZenModeConfig.isValidCountdownConditionId(automaticRule.conditionId)
-                    || ZenModeConfig.isValidScheduleConditionId(automaticRule.conditionId)) {
-                    final Context userContext = getContextForUser(UserHandle.of(userId));
-                    final long endTime = ZenModeConfig.parseAutomaticRuleEndTime(userContext,
-                            automaticRule.conditionId);
-                    if (endTime > latestEndTime) {
-                        shouldCheckDndNeeded = true;
-                        latestEndTime = endTime;
-                        activeAutomaticZenRule = automaticRule;
-                    }
-                } else {
-                    // use this 3rd party rule
-                    return determineInterception(userConfig, automaticRule, record);
-                }
-            }
-
-        }
-
-        if (shouldCheckDndNeeded) {
-            return determineInterception(userConfig, activeAutomaticZenRule, record);
-        }
-        return false;
-    }
-
-    private Context getContextForUser(UserHandle user) {
-        try {
-            return getContext().createPackageContextAsUser(getContext().getPackageName(), 0, user);
-        } catch (NameNotFoundException e) {
-            // Default to system context, not finding the package system is running as is unlikely.
-            return getContext();
-        }
-    }
-
-    /**
-     * Determines interception for the user's ZenModeConfig. If `automaticZenRule` is null,
-     * then the manual rule is assumed to be used.
-     * @param userConfig
-     * @param automaticZenRule
-     * @param record
-     * @return
-     */
-    private boolean determineInterception(@NonNull ZenModeConfig userConfig,
-                                          @Nullable ZenModeConfig.ZenRule automaticZenRule,
-                                          @NonNull NotificationRecord record) {
-        // If user is using manual DND, then suppressedVisualEffects is used. The manual
-        // rule has no ZenPolicy set up, so applying the consolidated policy inherits the
-        // ZenModeConfig's properties for the unset fields of the ZenPolicy. Therefore,
-        // userConfig.suppressedVisualEffects is used.
-        if (automaticZenRule == null) {
-            if ((userConfig.suppressedVisualEffects & SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
-                return mZenModeHelper.shouldInterceptVisuallyWithConfig(
-                        record, userConfig, userConfig.manualRule);
-            }
-            return false;
-        }
-
-        // Using automatic rule
+        return mZenModeHelper.shouldInterceptVisuallyWithConfig(record, userConfig);
     }
 
     /**
@@ -5905,7 +5809,7 @@ public class NotificationManagerService extends SystemService {
      * {@link com.android.systemui.statusbar.NotificationLockscreenUserManagerImpl#shouldHideNotifications(int)}
      * {@link com.android.systemui.statusbar.NotificationLockscreenUserManagerImpl#shouldShowOnKeyguard(NotificationEntry)}
      * These methods aren't static methods and they rely on a lot of their internal functions,
-     * so we have to extract the logic from them into here.
+     * so we have to extract the logic into here.
      */
     @GuardedBy("mNotificationLock")
     private boolean shouldShowNotificationOnKeyguardForUser(int userId, NotificationRecord record) {

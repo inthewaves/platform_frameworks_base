@@ -176,26 +176,38 @@ public class ZenModeHelper {
     }
 
     /**
-     * No mutex is needed; `config` is assumed to be a copy.
+     * No mConfig lock is needed; `config` is assumed to be a copy.
+     * See {@link #computeZenMode()} for where the logic for computing zen mode was taken from.
+     * See {@link #updateConsolidatedPolicy(String)} for where the logic for creating a consolidated
+     * policy was taken from.
      */
     boolean shouldInterceptVisuallyWithConfig(NotificationRecord record,
                                               ZenModeConfig config) {
+        // Create the consolidated policy for the user, and also compute the zen mode.
         final ZenPolicy zenPolicy = new ZenPolicy();
         int zenMode = Global.ZEN_MODE_OFF;
+        boolean zenModeFromManualConfig = false;
         if (config.manualRule != null) {
             applyCustomPolicy(zenPolicy, config.manualRule);
             zenMode = config.manualRule.zenMode;
+            // Don't replace the zen mode anymore. Mirrors the line
+            // if (mConfig.manualRule != null) return mConfig.manualRule.zenMode;
+            // from computeZenMode.
+            zenModeFromManualConfig = true;
         }
 
         for (ZenRule automaticRule : config.automaticRules.values()) {
             if (automaticRule.isAutomaticActive()) {
                 applyCustomPolicy(zenPolicy, automaticRule);
-                zenMode = automaticRule.zenMode;
+                if (!zenModeFromManualConfig
+                        && zenSeverity(automaticRule.zenMode) > zenSeverity(zenMode)) {
+                    zenMode = automaticRule.zenMode;
+                }
             }
         }
         final NotificationManager.Policy policy = config.toNotificationPolicy(zenPolicy);
         // Only consider intercepting when the policy hides notifications from the lock screen
-        if ((zenPolicy.suppressedVisualEffects &
+        if ((policy.suppressedVisualEffects &
                 NotificationManager.Policy.SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
             return mFiltering.shouldIntercept(zenMode, policy, record);
         }
