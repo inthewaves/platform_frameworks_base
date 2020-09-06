@@ -5816,7 +5816,7 @@ public class NotificationManagerService extends SystemService {
     private CensoredSendState getSendStateFromDoNotDisturb(int userId, NotificationRecord record) {
         // ZenModeHelper works by only focusing on the foreground user's do not disturb settings.
         // We need to make new methods in ZenModeHelper such as getConfigCopyForUser to expose a way
-        // to get the config and interception results per user.
+        // to get the config and interception results for an arbitrary user.
         final ZenModeConfig userConfig = mZenModeHelper.getConfigCopyForUser(userId);
         if (userConfig == null) {
             return CensoredSendState.SEND_NORMAL;
@@ -5860,8 +5860,6 @@ public class NotificationManagerService extends SystemService {
         }
 
         if (channel.getImportance() == IMPORTANCE_LOW) {
-            if (Settings.Secure.getIntForUser(getContext().getContentResolver(),
-                    Settings.Secure.LOCK_SCREEN_SHOW_SILENT_NOTIFICATIONS, 1, userId) != 0)
             return Settings.Secure.getIntForUser(getContext().getContentResolver(),
                     Settings.Secure.LOCK_SCREEN_SHOW_SILENT_NOTIFICATIONS, 1, userId) != 0;
         }
