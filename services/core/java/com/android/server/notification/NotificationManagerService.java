@@ -5918,7 +5918,8 @@ public class NotificationManagerService extends SystemService {
                 Slog.d(TAG, "DEBUG: zen manual rule detected");
                 // If they're using manual rule, then suppressedVisualEffects is used. The manual
                 // rule has no ZenPolicy set up, so applying the consolidated policy inherits the
-                // ZenModeConfig's properties for the unset fields of the ZenPolicy.
+                // ZenModeConfig's properties for the unset fields of the ZenPolicy. Therefore,
+                // userConfig.suppressedVisualEffects is used.
                 if ((userConfig.suppressedVisualEffects & SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
                     Slog.d(TAG, "not sending censored notificatiosn due to manual DND");
 
@@ -5928,10 +5929,13 @@ public class NotificationManagerService extends SystemService {
                         return false;
                     }
                 }
-            } else if (userConfig.automaticRules != null) {
+            } else if (userConfig != null && userConfig.automaticRules != null) {
                 Slog.d(TAG, "DEBUG: checking automatic zen rules");
                 ZenModeConfig.ZenRule activeAutomaticRule = null;
                 for (ZenModeConfig.ZenRule automaticRule : userConfig.automaticRules.values()) {
+                    // Note: If an automatic rule activates in a background user,
+                    // automaticRule.isAutomaticActive() will stay false until the system is
+                    // switched to that user.
                     if (automaticRule.isAutomaticActive()) {
                         Slog.d(TAG, "DEBUG: Automatic rule detected");
                         activeAutomaticRule = automaticRule;
