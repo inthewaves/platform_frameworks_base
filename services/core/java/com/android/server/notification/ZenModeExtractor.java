@@ -48,6 +48,7 @@ public class ZenModeExtractor implements NotificationSignalExtractor {
         if (record.isIntercepted()) {
             record.setSuppressedVisualEffects(
                     mZenModeHelper.getConsolidatedNotificationPolicy().suppressedVisualEffects);
+            Slog.d(TAG, "DEBUG: RECORD GOT INTERCEPTED, RECORD INFO: " + record.toString());
         } else {
             record.setSuppressedVisualEffects(0);
         }

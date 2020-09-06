@@ -815,7 +815,7 @@ public class ZenModeHelper {
     /**
      * @return a copy of the zen mode configuration for userId
      */
-    ZenModeConfig getConfigForUser(int userId) {
+    ZenModeConfig getConfigCopyForUser(int userId) {
         synchronized (mConfig) {
             return mConfigs.get(userId).copy();
         }
