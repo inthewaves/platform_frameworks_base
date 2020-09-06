@@ -284,7 +284,7 @@ import java.util.function.BiConsumer;
 /** {@hide} */
 public class NotificationManagerService extends SystemService {
     static final String TAG = "NotificationService";
-    static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG) || true;
+    static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG);
     public static final boolean ENABLE_CHILD_NOTIFICATIONS
             = SystemProperties.getBoolean("debug.child_notifs", true);
 
@@ -366,7 +366,6 @@ public class NotificationManagerService extends SystemService {
     private static final String ACTION_SWITCH_USER =
             NotificationManagerService.class.getSimpleName() + ".SWITCH_USER";
     private static final String EXTRA_SWITCH_USER_USERID = "userid";
-    private static final String EXTRA_SWITCH_USER_NOTIFICATION_ID = "notification_id";
     private static final String TAG_SWITCH_USER = "switch_user";
 
     private IActivityManager mAm;
@@ -5792,7 +5791,6 @@ public class NotificationManagerService extends SystemService {
         }
 
         if (userConfig.manualRule != null) {
-            Slog.d(TAG, "DEBUG: zen manual rule detected");
             // If user is using manual DND, then suppressedVisualEffects is used. The manual
             // rule has no ZenPolicy set up, so applying the consolidated policy inherits the
             // ZenModeConfig's properties for the unset fields of the ZenPolicy. Therefore,
@@ -5934,7 +5932,6 @@ public class NotificationManagerService extends SystemService {
 
             final Intent intent = new Intent(ACTION_SWITCH_USER)
                     .putExtra(EXTRA_SWITCH_USER_USERID, userId)
-                    .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
                     .setPackage(getContext().getPackageName());
 
             // intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY)
