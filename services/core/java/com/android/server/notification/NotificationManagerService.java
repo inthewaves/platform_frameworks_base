@@ -86,7 +86,6 @@ import static android.service.notification.NotificationListenerService.REASON_UN
 import static android.service.notification.NotificationListenerService.REASON_USER_STOPPED;
 import static android.service.notification.NotificationListenerService.TRIM_FULL;
 import static android.service.notification.NotificationListenerService.TRIM_LIGHT;
-import static android.service.notification.ZenPolicy.STATE_DISALLOW;
 import static android.util.StatsLogInternal.BUBBLE_DEVELOPER_ERROR_REPORTED__ERROR__ACTIVITY_INFO_MISSING;
 import static android.util.StatsLogInternal.BUBBLE_DEVELOPER_ERROR_REPORTED__ERROR__ACTIVITY_INFO_NOT_RESIZABLE;
 import static android.util.StatsLogInternal.BUBBLE_DEVELOPER_ERROR_REPORTED__ERROR__DOCUMENT_LAUNCH_NOT_ALWAYS;
@@ -198,6 +197,7 @@ import android.service.notification.SnoozeCriterion;
 import android.service.notification.StatusBarNotification;
 import android.service.notification.ZenModeConfig;
 import android.service.notification.ZenModeProto;
+import android.service.notification.ZenPolicy;
 import android.telephony.PhoneStateListener;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
@@ -5691,13 +5691,14 @@ public class NotificationManagerService extends SystemService {
                         // alert more than once (fixes issues like OpenVPN status updates spamming).
                         if (!r.isHidden()
                                 && !shouldMuteNotificationLocked(r)) {
+
                             mHandler.post(new EnqueueCensoredNotificationRunnable(
                                     r.sbn.getPackageName(),
                                     r.getUser().getIdentifier(),
                                     r.sbn.getId(),
                                     r.getChannel(),
                                     r.isInterruptive(),
-                                    r.getSuppressedVisualEffects()));
+                                    r));
                         }
                     } else {
                         Slog.e(TAG, "Not posting notification without small icon: " + notification);
@@ -5753,18 +5754,18 @@ public class NotificationManagerService extends SystemService {
         private final int notificationId;
         private final NotificationChannel channel;
         private final boolean isInterruptive;
-        private final int suppressedVisualEffects;
+        private final NotificationRecord record;
 
         private final String notificationGroupKey;
 
         EnqueueCensoredNotificationRunnable(String pkg, int userId, int notificationId,
                                             NotificationChannel channel, boolean isInterruptive,
-                                            int suppressedVisualEffects) {
+                                            NotificationRecord record) {
             this.pkg = pkg;
             this.userId = userId;
             this.channel = channel;
             this.isInterruptive = isInterruptive;
-            this.suppressedVisualEffects = suppressedVisualEffects;
+            this.record = record;
 
             // Group the censored notifications by user.
             notificationGroupKey = "USER_" + userId;
@@ -5779,8 +5780,7 @@ public class NotificationManagerService extends SystemService {
             final int currentUserId = ActivityManager.getCurrentUser();
             if (currentUserId == userId
                     || userId == UserHandle.USER_ALL
-                    || !showNotificationChannelOnKeyguardForUser(userId, channel,
-                            suppressedVisualEffects)) {
+                    || !showNotificationChannelOnKeyguardForUser(userId, channel)) {
                 return;
             }
 
@@ -5826,6 +5826,8 @@ public class NotificationManagerService extends SystemService {
                     .putExtra(EXTRA_SWITCH_USER_USERID, userId)
                     .putExtra(EXTRA_SWITCH_USER_NOTIFICATION_ID, notificationId)
                     .setPackage(getContext().getPackageName());
+
+            // intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY)
 
             PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(), 0,
                     intent, PendingIntent.FLAG_UPDATE_CURRENT);
@@ -5885,8 +5887,7 @@ public class NotificationManagerService extends SystemService {
          * so we have to extract the logic from them into here.
          */
         private boolean showNotificationChannelOnKeyguardForUser(int userId,
-                                                                 NotificationChannel channel,
-                                                                 int suppressedVisualEffects) {
+                                                                 NotificationChannel channel) {
             // Guard against notifications channels hiding from lock screen, silent notifications
             // that are minimized (ambient notifications), and no-importance notifications.
             if (channel.getLockscreenVisibility() == VISIBILITY_SECRET
@@ -5903,54 +5904,51 @@ public class NotificationManagerService extends SystemService {
                 return false;
             }
 
-            // ILockSettings service = ILockSettings.Stub.asInterface(
-            //                    ServiceManager.getService("lock_settings"));
-
             final int strongAuthFlags =
                     new LockPatternUtils(getContext()).getStrongAuthForUser(userId);
             if ((strongAuthFlags & STRONG_AUTH_REQUIRED_AFTER_USER_LOCKDOWN) != 0) {
                 return false;
             }
 
-            /*
-            Context userContext;
-            try {
-                userContext = getContext().createPackageContextAsUser("android",
-                        Context.CONTEXT_RESTRICTED, new UserHandle(userId));
-            } catch (PackageManager.NameNotFoundException e) {
-                Log.e(TAG, "failed to create package context for lookups", e);
-            }
-             */
-
-            // Account for the user's do not disturb
+            // Account for the user's do not disturb.
+            // mZenModeHelper works by only focusing on one active user at a time, since it wasn't
+            // designed to handle multiple users sending notifications.
             final ZenModeConfig userConfig = mZenModeHelper.getConfigForUser(userId);
-
-            if (userConfig.manualRule == null) {
-                Slog.d(TAG, "DEBUG: zen manual rule is null? Why???");
-            } else if (userConfig.manualRule.zenPolicy == null) {
-                Slog.d(TAG, "DEBUG: zen manual rule policy is null? Why???");
-            }
-
-            int suppressed = 0;
-            if (userConfig != null && userConfig.manualRule != null && userConfig.manualRule.zenPolicy != null) {
+            if (userConfig != null && userConfig.manualRule != null) {
                 Slog.d(TAG, "DEBUG: zen manual rule detected");
-                suppressed = userConfig.manualRule.zenPolicy.getVisualEffectNotificationList();
+                // If they're using manual rule, then suppressedVisualEffects is used. The manual
+                // rule has no ZenPolicy set up, so applying the consolidated policy inherits the
+                // ZenModeConfig's properties for the unset fields of the ZenPolicy.
+                if ((userConfig.suppressedVisualEffects & SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
+                    Slog.d(TAG, "not sending censored notificatiosn due to manual DND");
+
+                    final boolean shouldIntercept = mZenModeHelper.shouldInterceptWithConfigAndRule(
+                            record, userConfig, userConfig.manualRule);
+                    if (shouldIntercept) {
+                        return false;
+                    }
+                }
             } else if (userConfig.automaticRules != null) {
                 Slog.d(TAG, "DEBUG: checking automatic zen rules");
+                ZenModeConfig.ZenRule activeAutomaticRule = null;
                 for (ZenModeConfig.ZenRule automaticRule : userConfig.automaticRules.values()) {
                     if (automaticRule.isAutomaticActive()) {
                         Slog.d(TAG, "DEBUG: Automatic rule detected");
-                        suppressed = automaticRule.zenPolicy.getVisualEffectNotificationList();
+                        activeAutomaticRule = automaticRule;
                         break;
                     }
                 }
-            }
-            Slog.d(TAG, "DEBUG: suppressed is " + suppressed);
-            Slog.d(TAG, "DEBUG: userConfig.suppressedVisualEffects is " + userConfig.suppressedVisualEffects);
-            Slog.d(TAG, "DEBUG: the suppressedVisualEffects from the record is " + suppressedVisualEffects);
-            if (suppressed == STATE_DISALLOW) {
-                Slog.d(TAG, "Not sending censored notificatiosn due to DND");
-                return false;
+                if (activeAutomaticRule != null
+                        && activeAutomaticRule.zenPolicy.getVisualEffectNotificationList()
+                        == ZenPolicy.STATE_DISALLOW) {
+                    Slog.d(TAG, "not sending censored notificatiosn due to automatic DND");
+
+                    final boolean shouldIntercept = mZenModeHelper.shouldInterceptWithConfigAndRule(
+                            record, userConfig, activeAutomaticRule);
+                    if (shouldIntercept) {
+                        return false;
+                    }
+                }
             }
 
             if (channel.getImportance() == IMPORTANCE_LOW) {

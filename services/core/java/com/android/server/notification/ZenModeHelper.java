@@ -175,6 +175,20 @@ public class ZenModeHelper {
         }
     }
 
+    boolean shouldInterceptWithConfigAndRule(NotificationRecord record, ZenModeConfig config,
+                                             ZenRule rule) {
+        final NotificationManager.Policy policy = createConsolidatedPolicy(config, rule);
+        synchronized (mConfig) {
+            return mFiltering.shouldIntercept(rule.zenMode, policy, record);
+        }
+    }
+
+    private NotificationManager.Policy createConsolidatedPolicy(ZenModeConfig config, ZenRule rule) {
+        ZenPolicy policy = new ZenPolicy();
+        applyCustomPolicy(policy, rule);
+        return config.toNotificationPolicy(policy);
+    }
+
     public void addCallback(Callback callback) {
         mCallbacks.add(callback);
     }
