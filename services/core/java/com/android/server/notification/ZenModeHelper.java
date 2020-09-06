@@ -176,24 +176,33 @@ public class ZenModeHelper {
     }
 
     /**
+     * Determines if a notification record should be suppressed from the lock screen for the
+     * given config. For use in determining if a notification should be forwarded to the foreground
+     * user in censored form.
+     *
      * No mConfig lock is needed; `config` is assumed to be a copy.
      * See {@link #computeZenMode()} for where the logic for computing zen mode was taken from.
      * See {@link #updateConsolidatedPolicy(String)} for where the logic for creating a consolidated
      * policy was taken from.
      */
-    boolean shouldInterceptVisuallyWithConfig(NotificationRecord record,
-                                              ZenModeConfig config) {
+    boolean shouldInterceptFromLockScreenWithConfig(NotificationRecord record,
+                                                    ZenModeConfig config) {
         // Create the consolidated policy for the user, and also compute the zen mode.
         final ZenPolicy zenPolicy = new ZenPolicy();
         int zenMode = Global.ZEN_MODE_OFF;
         boolean zenModeFromManualConfig = false;
         if (config.manualRule != null) {
-            applyCustomPolicy(zenPolicy, config.manualRule);
-            zenMode = config.manualRule.zenMode;
             // Don't replace the zen mode anymore. Mirrors the line
-            // if (mConfig.manualRule != null) return mConfig.manualRule.zenMode;
+            //     if (mConfig.manualRule != null) return mConfig.manualRule.zenMode;
             // from computeZenMode.
             zenModeFromManualConfig = true;
+            zenMode = config.manualRule.zenMode;
+            if (zenMode == Global.ZEN_MODE_OFF) {
+                // zenMode won't be changed again anyway, so it won't be
+                // intercepted.
+                return false;
+            }
+            applyCustomPolicy(zenPolicy, config.manualRule);
         }
 
         for (ZenRule automaticRule : config.automaticRules.values()) {
@@ -205,6 +214,11 @@ public class ZenModeHelper {
                 }
             }
         }
+
+        if (zenMode == Global.ZEN_MODE_OFF) {
+            return false;
+        }
+
         final NotificationManager.Policy policy = config.toNotificationPolicy(zenPolicy);
         // Only consider intercepting when the policy hides notifications from the lock screen
         if ((policy.suppressedVisualEffects &

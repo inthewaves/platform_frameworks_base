@@ -5798,7 +5798,7 @@ public class NotificationManagerService extends SystemService {
             return false;
         }
 
-        return mZenModeHelper.shouldInterceptVisuallyWithConfig(record, userConfig);
+        return mZenModeHelper.shouldInterceptFromLockScreenWithConfig(record, userConfig);
     }
 
     /**
