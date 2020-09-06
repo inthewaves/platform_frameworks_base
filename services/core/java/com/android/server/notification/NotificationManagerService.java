@@ -5692,16 +5692,14 @@ public class NotificationManagerService extends SystemService {
                         // Now that the notification is posted, we can now consider sending a
                         // censored copy of it to the foreground user (if the foreground user
                         // differs from the intended recipient).
-                        final CensoredSendState state =
-                                shouldSendCensoredNotificationToForegroundUser(r);
+                        final CensoredSendState state = getCensoredSendStateForNotification(r);
                         if (state != CensoredSendState.DONT_SEND) {
+                            // Give the information directly so that we can release
+                            // mNotificationLock.
                             mHandler.post(new EnqueueCensoredNotificationRunnable(
-                                    r.sbn.getPackageName(),
-                                    r.getUser().getIdentifier(),
-                                    r.sbn.getId(),
-                                    r.getChannel(),
-                                    r.isInterruptive(),
-                                    state));
+                                    r.sbn.getPackageName(), r.getUser().getIdentifier(),
+                                    r.sbn.getId(), r.getChannel().getImportance(),
+                                    r.isInterruptive(), state));
                         }
                     } else {
                         Slog.e(TAG, "Not posting notification without small icon: " + notification);
@@ -5742,8 +5740,7 @@ public class NotificationManagerService extends SystemService {
     }
 
     @GuardedBy("mNotificationLock")
-    private CensoredSendState shouldSendCensoredNotificationToForegroundUser(
-            NotificationRecord record) {
+    private CensoredSendState getCensoredSendStateForNotification(NotificationRecord record) {
         final int userId = record.getUser().getIdentifier();
         final int currentUserId = ActivityManager.getCurrentUser();
         if (currentUserId == userId || userId == UserHandle.USER_ALL) {
@@ -5770,8 +5767,7 @@ public class NotificationManagerService extends SystemService {
 
         // Handles reoccurring update notifications (fixes issues like OpenVPN status updates
         // spamming).
-        final Notification notification = record.getNotification();
-        if (record.isUpdate && (notification.flags & FLAG_ONLY_ALERT_ONCE) != 0) {
+        if (record.isUpdate && (record.getNotification().flags & FLAG_ONLY_ALERT_ONCE) != 0) {
             return CensoredSendState.DONT_SEND;
         }
 
@@ -5783,7 +5779,7 @@ public class NotificationManagerService extends SystemService {
 
         // Suppressed because another notification in its group handles alerting
         if (record.sbn.isGroup()) {
-            if (notification.suppressAlertingDueToGrouping()) {
+            if (record.getNotification().suppressAlertingDueToGrouping()) {
                 return CensoredSendState.DONT_SEND;
             }
         }
@@ -5793,6 +5789,7 @@ public class NotificationManagerService extends SystemService {
             return CensoredSendState.DONT_SEND;
         }
 
+        // We can't use record.isIntercepted(). That setting is based on the foreground user.
         return getSendStateFromDoNotDisturb(userId, record);
     }
 
@@ -5801,18 +5798,19 @@ public class NotificationManagerService extends SystemService {
      * For use in determining if a notification should be forwarded to the foreground user in
      * censored form.
      * - If user A has DND off, then user B will get notifications normally
-     *   ({@link CensoredSendState#SEND_NORMAL}).
+     *   ({@link CensoredSendState#SEND_NORMAL}). (May still be hidden or muted depending on the
+     *   settings of the notification channel.
      * - If user A has DND on and isn't hiding notifications from notification shade/lock screen,
      *   then user B will get muted censored notifications ({@link CensoredSendState#SEND_QUIET}).
      * - If user A has DND on and is hiding notifications, then user B will not get any censored
-     *   notifications {@link CensoredSendState#DONT_SEND}.
+     *   notifications {@link CensoredSendState#DONT_SEND} unless they're bypassed for user A.
      * - If user A has DND on and a notification they receive bypasses DND, then user B will get the
      *   notification normally ({@link CensoredSendState#SEND_NORMAL}).
      *
      * @param userId The identifier of the user to check the DND settings for.
      * @param record The notification that is checked to see if it should be intercepted by DND.
-     * @return The censored sending state. If DND is off, then send normally, possibly with
-     * notification
+     * @return The censored sending state derived from the the notification and the user's do not
+     * disturb settings.
      */
     @GuardedBy("mNotificationLock")
     private CensoredSendState getSendStateFromDoNotDisturb(int userId, NotificationRecord record) {
@@ -5881,7 +5879,7 @@ public class NotificationManagerService extends SystemService {
      * - The censored notifications are grouped by user.
      * - The censored notifications respect the lock screen visibility and the do not disturb
      *   settings of the original recipient user, but the Runnable does not enforce it. This
-     *   Runnable should be run after {@link #shouldSendCensoredNotificationToForegroundUser}.
+     *   Runnable should be run after {@link #getCensoredSendStateForNotification}.
      * - The censored notifications will be quiet for the current user if the original notification
      *   is quiet. This includes silent channels and do not disturb muting.
      * - The censored notifications are automatically cancelled whenever a user switch occurs
@@ -5893,19 +5891,18 @@ public class NotificationManagerService extends SystemService {
         private final String pkg;
         private final int userId;
         private final int notificationId;
-        private final NotificationChannel channel;
+        private final int channelImportance;
         private final boolean isVisuallyInterruptive;
         private final CensoredSendState censoredSendState;
 
         private final String notificationGroupKey;
 
         EnqueueCensoredNotificationRunnable(String pkg, int userId, int notificationId,
-                                            NotificationChannel channel,
-                                            boolean isVisuallyInterruptive,
+                                            int channelImportance, boolean isVisuallyInterruptive,
                                             CensoredSendState state) {
             this.pkg = pkg;
             this.userId = userId;
-            this.channel = channel;
+            this.channelImportance = channelImportance;
             this.isVisuallyInterruptive = isVisuallyInterruptive;
             this.censoredSendState = state;
 
@@ -5964,7 +5961,7 @@ public class NotificationManagerService extends SystemService {
             // coming from silent notifications will never audibly notify the foreground user.
             final boolean shouldNotMakeSoundForCurrentUser =
                     censoredSendState == CensoredSendState.SEND_QUIET
-                    || (channel.getImportance() == IMPORTANCE_LOW) || !isVisuallyInterruptive;
+                    || (channelImportance == IMPORTANCE_LOW) || !isVisuallyInterruptive;
 
             final Notification censoredNotification =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)

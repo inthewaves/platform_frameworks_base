@@ -185,11 +185,12 @@ public class ZenModeHelper {
      * No mConfig lock is needed; `config` is assumed to be a copy.
      * See {@link #computeZenMode()} for where the logic for computing zen mode was taken from.
      * See {@link #updateConsolidatedPolicy(String)} for where the logic for creating a consolidated
-     * policy was taken from.
+     * policy was taken from. Both methods are combined here to be able to generate a consolidated
+     * policy for an arbitrary ZenModeConfig.
      */
     CensoredSendState getCensoredSendingStateWithZenModeConfig(NotificationRecord record,
                                                                ZenModeConfig config) {
-        // Create the consolidated policy for the user, and also compute the zen mode.
+        // Steps to create the consolidated policy for the user, and compute the zen mode.
         final ZenPolicy zenPolicy = new ZenPolicy();
         int zenMode = Global.ZEN_MODE_OFF;
         boolean zenModeFromManualConfig = false;
@@ -221,15 +222,18 @@ public class ZenModeHelper {
             return CensoredSendState.SEND_NORMAL;
         }
 
+        // Create the consolidated policy. (Maybe these can be cached?)
         final NotificationManager.Policy policy = config.toNotificationPolicy(zenPolicy);
         final boolean shouldIntercept = mFiltering.shouldIntercept(zenMode, policy, record);
         if (shouldIntercept) {
-            // If hidden from lock screen don't send it; otherwise, since it has been intercepted,
-            // it has been muted by DND and we should send it quietly.
+            // Notification does not bypass DND
             if ((policy.suppressedVisualEffects &
                     NotificationManager.Policy.SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
+                // If user A has DND on and is hiding notifications from notification shade/loc,
+                // then user B will not get any censored notifications
                 return CensoredSendState.DONT_SEND;
             }
+            // Otherwise user B will get muted censored notifications
             return CensoredSendState.SEND_QUIET;
         }
         return CensoredSendState.SEND_NORMAL;
