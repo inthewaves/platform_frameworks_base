@@ -16,6 +16,8 @@
 
 package com.android.server.notification;
 
+import static com.android.server.notification.NotificationManagerService.CensoredSendState;
+
 import android.app.AppOpsManager;
 import android.app.AutomaticZenRule;
 import android.app.Notification;
@@ -185,7 +187,7 @@ public class ZenModeHelper {
      * See {@link #updateConsolidatedPolicy(String)} for where the logic for creating a consolidated
      * policy was taken from.
      */
-    boolean shouldInterceptFromLockScreenWithConfig(NotificationRecord record,
+    CensoredSendState shouldInterceptFromLockScreenWithConfig(NotificationRecord record,
                                                     ZenModeConfig config) {
         // Create the consolidated policy for the user, and also compute the zen mode.
         final ZenPolicy zenPolicy = new ZenPolicy();
@@ -199,8 +201,8 @@ public class ZenModeHelper {
             zenMode = config.manualRule.zenMode;
             if (zenMode == Global.ZEN_MODE_OFF) {
                 // zenMode won't be changed again anyway, so it won't be
-                // intercepted.
-                return false;
+                // intercepted. Send normally.
+                return CensoredSendState.SEND_NORMAL;
             }
             applyCustomPolicy(zenPolicy, config.manualRule);
         }
@@ -216,16 +218,19 @@ public class ZenModeHelper {
         }
 
         if (zenMode == Global.ZEN_MODE_OFF) {
-            return false;
+            return CensoredSendState.SEND_NORMAL;
         }
 
         final NotificationManager.Policy policy = config.toNotificationPolicy(zenPolicy);
         // Only consider intercepting when the policy hides notifications from the lock screen
         if ((policy.suppressedVisualEffects &
                 NotificationManager.Policy.SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
-            return mFiltering.shouldIntercept(zenMode, policy, record);
+            return mFiltering.shouldInterceptNoLogging(zenMode, policy, record);
         }
-        return false;
+
+        // Send normally for apps bypassing DND
+        return (record.getPackagePriority() == Notification.PRIORITY_MAX)
+                ? CensoredSendState.SEND_NORMAL : CensoredSendState.SEND_QUIET;
     }
 
     public void addCallback(Callback callback) {

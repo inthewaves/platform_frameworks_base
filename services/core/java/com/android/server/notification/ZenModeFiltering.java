@@ -17,6 +17,7 @@
 package com.android.server.notification;
 
 import static android.provider.Settings.Global.ZEN_MODE_OFF;
+import static com.android.server.notification.NotificationManagerService.CensoredSendState;
 
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -207,6 +208,97 @@ public class ZenModeFiltering {
                 return true;
             default:
                 return false;
+        }
+    }
+
+    /**
+     * Whether to intercept the notification based on the policy. Does not do any logs,
+     * and returns a CensoredSendState.
+     */
+    public CensoredSendState shouldInterceptNoLogging(int zen, NotificationManager.Policy policy,
+                                                      NotificationRecord record) {
+        // Zen mode is ignored for critical notifications.
+        if (zen == ZEN_MODE_OFF || isCritical(record)) {
+            return CensoredSendState.SEND_NORMAL;
+        }
+        // Make an exception to policy for the notification saying that policy has changed
+        if (NotificationManager.Policy.areAllVisualEffectsSuppressed(policy.suppressedVisualEffects)
+                && "android".equals(record.sbn.getPackageName())
+                && SystemMessageProto.SystemMessage.NOTE_ZEN_UPGRADE == record.sbn.getId()) {
+            ZenLog.traceNotIntercepted(record, "systemDndChangedNotification");
+            return CensoredSendState.SEND_NORMAL;
+        }
+        switch (zen) {
+            case Global.ZEN_MODE_NO_INTERRUPTIONS:
+                // #notevenalarms
+                return CensoredSendState.DONT_SEND;
+            case Global.ZEN_MODE_ALARMS:
+                if (isAlarm(record)) {
+                    // Alarms only
+                    return CensoredSendState.SEND_NORMAL;
+                }
+                return CensoredSendState.SEND_QUIET;
+            case Global.ZEN_MODE_IMPORTANT_INTERRUPTIONS:
+                // allow user-prioritized packages through in priority mode
+                if (record.getPackagePriority() == Notification.PRIORITY_MAX) {
+                    return CensoredSendState.SEND_NORMAL;
+                }
+
+                if (isAlarm(record)) {
+                    if (!policy.allowAlarms()) {
+                        ZenLog.traceIntercepted(record, "!allowAlarms");
+                        return CensoredSendState.DONT_SEND;
+                    }
+                    return CensoredSendState.SEND_NORMAL;
+                }
+                if (isCall(record)) {
+                    if (policy.allowRepeatCallers()
+                            && REPEAT_CALLERS.isRepeat(mContext, extras(record))) {
+                        return CensoredSendState.SEND_NORMAL;
+                    }
+                    if (!policy.allowCalls()) {
+                        return CensoredSendState.DONT_SEND;
+                    }
+                    return shouldInterceptAudience(policy.allowCallsFrom(), record)
+                            ? CensoredSendState.DONT_SEND
+                            : CensoredSendState.SEND_NORMAL;
+                }
+                if (isMessage(record)) {
+                    if (!policy.allowMessages()) {
+                        return CensoredSendState.DONT_SEND;
+                    }
+                    return shouldInterceptAudience(policy.allowMessagesFrom(), record)
+                            ? CensoredSendState.DONT_SEND
+                            : CensoredSendState.SEND_NORMAL;
+                }
+                if (isEvent(record)) {
+                    if (!policy.allowEvents()) {
+                        return CensoredSendState.DONT_SEND;
+                    }
+                    return CensoredSendState.SEND_NORMAL;
+                }
+                if (isReminder(record)) {
+                    if (!policy.allowReminders()) {
+                        return CensoredSendState.DONT_SEND;
+                    }
+                    return CensoredSendState.SEND_NORMAL;
+                }
+                if (isMedia(record)) {
+                    if (!policy.allowMedia()) {
+                        return CensoredSendState.DONT_SEND;
+                    }
+                    return CensoredSendState.SEND_NORMAL;
+                }
+                if (isSystem(record)) {
+                    if (!policy.allowSystem()) {
+                        return CensoredSendState.DONT_SEND;
+                    }
+                    return CensoredSendState.SEND_NORMAL;
+                }
+
+                return CensoredSendState.SEND_QUIET;
+            default:
+                return CensoredSendState.SEND_NORMAL;
         }
     }
 
