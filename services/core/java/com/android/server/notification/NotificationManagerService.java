@@ -5730,6 +5730,7 @@ public class NotificationManagerService extends SystemService {
         }
     }
 
+    @GuardedBy("mNotificationLock")
     private boolean shouldSendCensoredNotificationToForegroundUser(NotificationRecord record) {
         final int userId = record.getUser().getIdentifier();
         final int currentUserId = ActivityManager.getCurrentUser();
@@ -5753,38 +5754,27 @@ public class NotificationManagerService extends SystemService {
         }
 
         Slog.d(TAG, "DEBUG: Checking censored notifs now for " + record.toString());
-        // Handles hidden notifications, muted notifications, reoccurring update notifications
-        // (fixes issues like OpenVPN status updates spamming).
-        if (record.isHidden() || shouldMuteNotificationLocked(record)) {
-            // Interception/do not disturb doesn't work properly for multiple users receiving
-            // notifications. The notification represented by `record` is for a background user, but
-            // the code for do not disturb is based on the current user's settings. We handle the
-            // sending user's DND settings later below.
-            //
-            // (However, note that the censored notifications themselves are system notifications,
-            // so the censored notifications will be visible to the foreground user even if the
-            // foreground user is using DND. This can probably be changed by making a new non-system
-            // app or package to proxy notifications from)
-            Slog.d(TAG, "DEBUG: record.isHidden: " + record.isHidden());
-            if (!record.isIntercepted()) {
-                String reason = "";
-                if (record.isHidden()) {
-                    reason += "is hidden,";
-                } else if (record.isUpdate && (record.getNotification().flags & FLAG_ONLY_ALERT_ONCE) != 0) {
-                    reason += "an update with flag alert once set";
-                } else if (disableNotificationEffects(record) != null) {
-                    reason += "disable notification effects: " + disableNotificationEffects(record);
-                } else if (record.sbn.isGroup() && record.getNotification().suppressAlertingDueToGrouping()) {
-                    reason += "suppressAlertingDueToGrouping";
-                } else if (mUsageStats.isAlertRateLimited(record.sbn.getPackageName())) {
-                    reason += "rate limited package";
-                } else {
-                    reason += "idk";
-                }
-                Slog.d(TAG, "DEBUG: failed censored sending: " + reason);
+        if (record.isHidden()) {
+            return false;
+        }
+
+        // Handles reoccurring update notifications (fixes issues like OpenVPN status updates
+        // spamming).
+        final Notification notification = record.getNotification();
+        if (record.isUpdate && (notification.flags & FLAG_ONLY_ALERT_ONCE) != 0) {
+            return false;
+        }
+
+        // Muted by listener
+        final String disableEffects = disableNotificationEffects(record);
+        if (disableEffects != null) {
+            return false;
+        }
+
+        // Suppressed because another notification in its group handles alerting
+        if (record.sbn.isGroup()) {
+            if (notification.suppressAlertingDueToGrouping()) {
                 return false;
-            } else {
-                Slog.d(TAG, "DEBUG: isIntercepted initial check bypassed.");
             }
         }
 
@@ -5802,6 +5792,7 @@ public class NotificationManagerService extends SystemService {
      * @param record The notification that is checked to see if it should be intercepted by DND.
      * @return Whether the notification is intercepted by DND according to the user's DND settings.
      */
+    @GuardedBy("mNotificationLock")
     private boolean shouldNotificationBeInterceptedForUser(int userId, NotificationRecord record) {
         // ZenModeHelper works by only focusing on the foreground user's do not disturb settings.
         // We need to make new methods in ZenModeHelper such as getConfigCopyForUser to expose a way
@@ -5861,6 +5852,7 @@ public class NotificationManagerService extends SystemService {
      * These methods aren't static methods and they rely on a lot of their internal functions,
      * so we have to extract the logic from them into here.
      */
+    @GuardedBy("mNotificationLock")
     private boolean shouldShowNotificationOnKeyguardForUser(int userId, NotificationRecord record) {
         final NotificationChannel channel = record.getChannel();
         // Guard against notifications channels hiding from lock screen, silent notifications
