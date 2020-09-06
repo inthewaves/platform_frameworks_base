@@ -175,18 +175,31 @@ public class ZenModeHelper {
         }
     }
 
-    boolean shouldInterceptWithConfigAndRule(NotificationRecord record, ZenModeConfig config,
-                                             ZenRule rule) {
-        final NotificationManager.Policy policy = createConsolidatedPolicy(config, rule);
-        synchronized (mConfig) {
-            return mFiltering.shouldIntercept(rule.zenMode, policy, record);
+    /**
+     * No mutex is needed; `config` is assumed to be a copy.
+     */
+    boolean shouldInterceptVisuallyWithConfig(NotificationRecord record,
+                                              ZenModeConfig config) {
+        final ZenPolicy zenPolicy = new ZenPolicy();
+        int zenMode = Global.ZEN_MODE_OFF;
+        if (config.manualRule != null) {
+            applyCustomPolicy(zenPolicy, config.manualRule);
+            zenMode = config.manualRule.zenMode;
         }
-    }
 
-    private NotificationManager.Policy createConsolidatedPolicy(ZenModeConfig config, ZenRule rule) {
-        ZenPolicy policy = new ZenPolicy();
-        applyCustomPolicy(policy, rule);
-        return config.toNotificationPolicy(policy);
+        for (ZenRule automaticRule : config.automaticRules.values()) {
+            if (automaticRule.isAutomaticActive()) {
+                applyCustomPolicy(zenPolicy, automaticRule);
+                zenMode = automaticRule.zenMode;
+            }
+        }
+        final NotificationManager.Policy policy = config.toNotificationPolicy(zenPolicy);
+        // Only consider intercepting when the policy hides notifications from the lock screen
+        if ((zenPolicy.suppressedVisualEffects &
+                NotificationManager.Policy.SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
+            return mFiltering.shouldIntercept(zenMode, policy, record);
+        }
+        return false;
     }
 
     public void addCallback(Callback callback) {
