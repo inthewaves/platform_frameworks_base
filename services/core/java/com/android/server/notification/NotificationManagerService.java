@@ -5902,11 +5902,17 @@ public class NotificationManagerService extends SystemService {
             this.censoredSendState = state;
 
             // Group the censored notifications by user.
-            notificationGroupKey = "USER_" + userId;
+            notificationGroupKey = "OTHER_USERS_" + userId;
             // Save room for auto group summary id, which is Integer.MAX_VALUE
-            this.notificationSummaryId = Integer.MAX_VALUE - 1 - userId;
-            this.notificationId = notificationId != this.notificationSummaryId
-                    ? notificationId : 0;
+            notificationSummaryId = Integer.MAX_VALUE - 1 - userId;
+
+            // Could be improved; currently, it's just combining the inputs to create something
+            // consistent for each user and app, using the userId and pkg hash code as a base for
+            // the original notification id.
+            final int notificationIdComp =
+                    Math.abs((userId << 2) + (pkg.hashCode() >> 4) + notificationId);
+            this.notificationId = (notificationIdComp != notificationSummaryId)
+                    ? notificationIdComp : notificationSummaryId >> 4;
         }
 
         @Override
@@ -5935,6 +5941,8 @@ public class NotificationManagerService extends SystemService {
 
             final String title = getContext().getString(
                     R.string.other_users_notification_title, appname, username);
+            final String subtext = getContext().getString(
+                    R.string.notification_channel_other_users);
             final String actionButtonTitle = getContext().getString(
                     R.string.other_users_notification_switch_user_action, username);
 
@@ -5968,6 +5976,7 @@ public class NotificationManagerService extends SystemService {
                             .setColor(color)
                             .setSmallIcon(R.drawable.ic_account_circle)
                             .setContentTitle(title)
+                            .setSubText(subtext)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup(notificationGroupKey)
                             .setGroupAlertBehavior(shouldNotMakeSoundForCurrentUser
@@ -5988,6 +5997,7 @@ public class NotificationManagerService extends SystemService {
                             .setSmallIcon(R.drawable.ic_account_circle)
                             .setColor(color)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
+                            .setSubText(subtext)
                             .setGroup(notificationGroupKey)
                             .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
                             .setGroupSummary(true)
