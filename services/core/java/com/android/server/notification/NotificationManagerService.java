@@ -5901,17 +5901,15 @@ public class NotificationManagerService extends SystemService {
             this.isVisuallyInterruptive = isVisuallyInterruptive;
             this.censoredSendState = state;
 
-            // Group the censored notifications by user.
+            // Group the censored notifications by user that sent them.
             notificationGroupKey = "OTHER_USERS_" + userId;
-            // Save room for auto group summary id, which is Integer.MAX_VALUE
+            // In the case where userId == 0, save room for auto group summary id,
+            // which is Integer.MAX_VALUE
             notificationSummaryId = Integer.MAX_VALUE - 1 - userId;
 
-            // Could be improved; currently, it's just combining the inputs to create something
-            // consistent for each user and app, using the userId and pkg hash code as a base for
-            // the original notification id.
-            final int notificationIdComp =
-                    Math.abs((userId << 2) + (pkg.hashCode() >> 4) + notificationId);
-            this.notificationId = (notificationIdComp != notificationSummaryId)
+            final int notificationIdComp = deriveNotificationId(pkg, userId, notificationId);
+            // Reserve the top integers for summary notification ids
+            this.notificationId = (notificationIdComp < Integer.MAX_VALUE - 100)
                     ? notificationIdComp : notificationSummaryId >> 4;
         }
 
@@ -6008,6 +6006,37 @@ public class NotificationManagerService extends SystemService {
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
                     MY_UID, MY_PID, TAG_SWITCH_USER, notificationSummaryId,
                     censoredNotificationSummary, currentUserId);
+        }
+
+        /**
+         * Derives a notification id from a package, userId, and an original notification id.
+         *
+         * The point of this is to reduce the number of notification ids that will coincide with
+         * each other. Suppose a notification X is censored and forwarded; this generates a censored
+         * notification Y. We don't want to generate notification ids in an incremental manner; we
+         * want a one-to-one correspondence between X.id and Y.id so that we can support things like
+         * not spamming users with update notifications that use the same id (but still alerts the
+         * foreground user if an update notification is supposed to make another aler)t.
+         *
+         * Normally, notification ids are only unique within an app; different apps on the same user
+         * can use the same notification id numbers without a problem. However, censored
+         * notifications only go through one notification channel; different apps that use the same
+         * notification ids will run into problems if we just use the notification ids as is (i.e.,
+         * older censored notifications may get overridden by newer ones).
+         *
+         * This implements Cantor's pairing function, which is a bijection N x N -> N (though the
+         * integers in Java are finite). Using a known bijection is a best effort to try to
+         * associate (userId, some hash of pkg) uniquely with a natural number, `base`.
+         *
+         * For example, from user 0, im.vector.app, and originalNotificationId 0, the derived id is
+         * 614335056. From user 10, im.vector.app, and originalNotificationId 0, the derived id is
+         * 3433199.
+         */
+        private int deriveNotificationId(String pkg, int userId, int originalNotificationId) {
+            // pad the package name, get a hash code, then make the hash smaller
+            final int b = ((userId << 2) + pkg).hashCode() >> 11;
+            final int base = Math.abs((((userId + b) * (userId + b + 1)) >> 1) + b);
+            return base + originalNotificationId;
         }
     }
 
