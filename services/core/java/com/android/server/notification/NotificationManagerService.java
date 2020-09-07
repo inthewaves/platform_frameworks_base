@@ -5911,6 +5911,9 @@ public class NotificationManagerService extends SystemService {
             // Reserve the top integers for summary notification ids
             this.notificationId = (notificationIdComp < Integer.MAX_VALUE - 100)
                     ? notificationIdComp : notificationSummaryId >> 4;
+
+            Slog.d(TAG, "DEBUG: Generated censored notification id " + this.notificationId
+                    + " from user " + userId + ", " + pkg + ", orig id " + notificationId);
         }
 
         @Override
@@ -5953,7 +5956,7 @@ public class NotificationManagerService extends SystemService {
                     .addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY
                                 | Intent.FLAG_RECEIVER_EXCLUDE_BACKGROUND);
             final PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(),
-                    0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+                    userId, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
             // This sets the group alert behavior.
             // If the original notification is a silent notification (IMPORTANCE_LOW), we set the
