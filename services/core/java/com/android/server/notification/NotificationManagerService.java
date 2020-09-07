@@ -5956,7 +5956,8 @@ public class NotificationManagerService extends SystemService {
                     .addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY
                                 | Intent.FLAG_RECEIVER_EXCLUDE_BACKGROUND);
             final PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(),
-                    userId, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+                    userId, intent, PendingIntent.FLAG_UPDATE_CURRENT
+                                    | PendingIntent.FLAG_ONE_SHOT);
 
             // This sets the group alert behavior.
             // If the original notification is a silent notification (IMPORTANCE_LOW), we set the
