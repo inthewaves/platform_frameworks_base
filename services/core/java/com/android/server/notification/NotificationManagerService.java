@@ -6040,7 +6040,7 @@ public class NotificationManagerService extends SystemService {
             // pad the package name, get a hash code, then make the hash smaller
             final int b = ((userId << 2) + pkg).hashCode() >> 11;
             final int base = Math.abs((((userId + b) * (userId + b + 1)) >> 1) + b);
-            return base + originalNotificationId;
+            return Math.abs(base + originalNotificationId);
         }
     }
 
