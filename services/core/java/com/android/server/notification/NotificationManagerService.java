@@ -5761,8 +5761,7 @@ public class NotificationManagerService extends SystemService {
             return CensoredSendState.DONT_SEND;
         }
 
-        // Handles reoccurring update notifications (fixes issues like OpenVPN status updates
-        // spamming).
+        // Handles reoccurring update notifications (fixes issues like status update spamming).
         if (record.isUpdate && (record.getNotification().flags & FLAG_ONLY_ALERT_ONCE) != 0) {
             return CensoredSendState.DONT_SEND;
         }
@@ -5806,13 +5805,13 @@ public class NotificationManagerService extends SystemService {
      * Accounts for the user's do not disturb settings.
      * For use in determining if a notification should be forwarded to the foreground user in
      * censored form.
-     * - If user A has DND off, then user B will get notifications normally
+     * - If user A has DND off, then user B will get the censored notifications normally
      *   ({@link CensoredSendState#SEND_NORMAL}). (May still be hidden or muted depending on the
-     *   settings of the notification channel.
+     *   settings of the notification channel, like minimized or silent notifications)
      * - If user A has DND on and isn't hiding notifications from notification shade/lock screen,
      *   then user B will get muted censored notifications ({@link CensoredSendState#SEND_QUIET}).
      * - If user A has DND on and is hiding notifications, then user B will not get any censored
-     *   notifications {@link CensoredSendState#DONT_SEND} unless they're bypassed for user A.
+     *   notifications {@link CensoredSendState#DONT_SEND}, unless they're bypassed for user A.
      * - If user A has DND on and a notification they receive bypasses DND, then user B will get the
      *   notification normally ({@link CensoredSendState#SEND_NORMAL}).
      *
@@ -5954,7 +5953,6 @@ public class NotificationManagerService extends SystemService {
                     R.string.notification_channel_other_users);
             final String actionButtonTitle = getContext().getString(
                     R.string.other_users_notification_switch_user_action, username);
-
             final int color = getContext().getColor(
                     com.android.internal.R.color.system_notification_accent_color);
 
@@ -6013,24 +6011,29 @@ public class NotificationManagerService extends SystemService {
         }
 
         /**
-         * Derives a notification id from a package, userId, and an original notification id.
+         * Derives a censored notification id from the package name, userId, and the original
+         * notification id.
          *
-         * The point of this is to reduce the number of notification ids that will coincide with
-         * each other. Suppose a notification X is censored and forwarded; this generates a censored
-         * notification Y. We don't want to generate notification ids in an incremental manner; we
-         * want a one-to-one correspondence between X.id and Y.id so that we can support things like
-         * not spamming users with update notifications that use the same id (but still alerts the
-         * foreground user if an update notification is supposed to make another aler)t.
+         * The point of this is to reduce chance that there will be notification id collisions.
+         * Suppose a notification X is censored and forwarded; this generates a censored
+         * notification Y. We want a one-to-one correspondence between X.id and Y.id so that we can
+         * support things like not spamming users with update notifications that originally use the
+         * same id (but still alerts the foreground user if an update notification is supposed to
+         * make another alert) and possibly enable cancelling of censored notifications from the
+         * original user. However, there's a problem.
          *
          * Normally, notification ids are only unique within an app; different apps on the same user
-         * can use the same notification id numbers without a problem. However, censored
-         * notifications only go through one notification channel; different apps that use the same
-         * notification ids will run into problems if we just use the notification ids as is (i.e.,
-         * older censored notifications may get overridden by newer ones).
+         * can use the same notification id numbers without a problem. However, currently censored
+         * notifications only go through one package---the system "android" package. Different apps
+         * that use the same notification ids will run into problems if we just use the notification
+         * ids as is (i.e., older censored notifications may get overridden by newer ones). Moreover,
+         * different users that use the same package may use the exact same notification ids! So, we
+         * cannot use the original notification ids as they are for the censored notification ids.
          *
-         * This implements Cantor's pairing function, which is a bijection N x N -> N (though the
-         * integers in Java are finite). Using a known bijection is a best effort to try to
-         * associate (userId, some hash of pkg) uniquely with a natural number, `base`.
+         * This implements Cantor's pairing function, which is a bijection N x N -> N. However, the
+         * integers in Java are finite; this doesn't really make it a bijection due to overflows.
+         * Nevertheless, it's a best effort to try to associate the pair (userId, pkg) uniquely with
+         * a natural number, `base`. Then, we add the original id to give it some offset.
          *
          * For example, from user 0, im.vector.app, and originalNotificationId 0, the derived id is
          * 614335056. From user 10, im.vector.app, and originalNotificationId 0, the derived id is
@@ -6040,6 +6043,7 @@ public class NotificationManagerService extends SystemService {
             // pad the package name, get a hash code, then make the hash smaller
             final int b = ((userId << 2) + pkg).hashCode() >> 11;
             final int base = Math.abs((((userId + b) * (userId + b + 1)) >> 1) + b);
+            // try to keep the notification ids positive
             return Math.abs(base + originalNotificationId);
         }
     }
