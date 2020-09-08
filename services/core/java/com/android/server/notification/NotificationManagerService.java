@@ -362,7 +362,6 @@ public class NotificationManagerService extends SystemService {
     private static final String ACTION_SWITCH_USER =
             NotificationManagerService.class.getSimpleName() + ".SWITCH_USER";
     private static final String EXTRA_SWITCH_USER_USERID = "userid";
-    private static final String TAG_SWITCH_USER = "switch_user";
 
     private IActivityManager mAm;
     private ActivityManager mActivityManager;
@@ -5695,7 +5694,7 @@ public class NotificationManagerService extends SystemService {
                             // mNotificationLock.
                             mHandler.post(new EnqueueCensoredNotificationRunnable(
                                     r.sbn.getPackageName(), r.getUser().getIdentifier(),
-                                    r.sbn.getId(), state));
+                                    r.sbn.getId(), r.sbn.getTag(), state));
                         }
                     } else {
                         Slog.e(TAG, "Not posting notification without small icon: " + notification);
@@ -5901,26 +5900,26 @@ public class NotificationManagerService extends SystemService {
         private final CensoredSendState censoredSendState;
 
         private final String notificationGroupKey;
+        private final String tag;
 
         EnqueueCensoredNotificationRunnable(String pkg, int userId, int notificationId,
-                                            CensoredSendState state) {
+                                            String tag, CensoredSendState state) {
             this.pkg = pkg;
             this.userId = userId;
             this.censoredSendState = state;
 
             // Group the censored notifications by user that sent them.
-            notificationGroupKey = "OTHER_USERS_" + userId;
+            notificationGroupKey = createCensoredNotificationGroupKey(userId);
             // In the case where userId == 0, save room for auto group summary id,
             // which is Integer.MAX_VALUE
-            notificationSummaryId = Integer.MAX_VALUE - 1 - userId;
-
-            final int notificationIdComp = deriveNotificationId(pkg, userId, notificationId);
-            // Reserve the top integers for summary notification ids
-            this.notificationId = (notificationIdComp < Integer.MAX_VALUE - 100)
-                    ? notificationIdComp : notificationSummaryId >> 4;
+            notificationSummaryId = createCensoredSummaryId(userId);
+            this.notificationId = createCensoredNotificationId(notificationId,
+                    notificationSummaryId, userId);
+            this.tag = createCensoredNotificationTag(userId, pkg, tag);
 
             Slog.d(TAG, "DEBUG: Generated censored notification id " + this.notificationId
-                    + " from user " + userId + ", " + pkg + ", orig id " + notificationId);
+                    + " from user " + userId + ", " + pkg + ", orig id " + notificationId + ", tag "
+                    + this.tag + ", sending to " + ActivityManager.getCurrentUser());
         }
 
         @Override
@@ -5988,7 +5987,7 @@ public class NotificationManagerService extends SystemService {
                             .build();
 
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
-                    MY_UID, MY_PID, TAG_SWITCH_USER, notificationId,
+                    MY_UID, MY_PID, tag, notificationId,
                     censoredNotification, currentUserId);
 
             // Group the censored notifications per user.
@@ -6006,7 +6005,7 @@ public class NotificationManagerService extends SystemService {
                             .build();
 
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
-                    MY_UID, MY_PID, TAG_SWITCH_USER, notificationSummaryId,
+                    MY_UID, MY_PID, createCensoredSummaryTag(userId), notificationSummaryId,
                     censoredNotificationSummary, currentUserId);
         }
 
@@ -6038,6 +6037,8 @@ public class NotificationManagerService extends SystemService {
          * For example, from user 0, im.vector.app, and originalNotificationId 0, the derived id is
          * 614335056. From user 10, im.vector.app, and originalNotificationId 0, the derived id is
          * 3433199.
+         *
+         * EDIT: Might not be needed, because we can just identify based on the tag.
          */
         private int deriveNotificationId(String pkg, int userId, int originalNotificationId) {
             // pad the package name, get a hash code, then make the hash smaller
@@ -6045,6 +6046,37 @@ public class NotificationManagerService extends SystemService {
             final int base = Math.abs((((userId + b) * (userId + b + 1)) >> 1) + b);
             // try to keep the notification ids positive
             return Math.abs(base + originalNotificationId);
+        }
+
+        /**
+         * @return a tag for the censored notification derived from the parameters. Note: the
+         * summary notification does not use this tag; see {@link #createCensoredSummaryTag(int)}.
+         */
+        private String createCensoredNotificationTag(int originalUserId, String pkg,
+                                                     @Nullable String originalTag) {
+            return "other_users_"
+                    + originalUserId + "_"
+                    + pkg + "_"
+                    + (originalTag != null ? originalTag : "");
+        }
+
+        private String createCensoredSummaryTag(int originalUserId) {
+            return "other_users" + originalUserId;
+        }
+
+        private int createCensoredNotificationId(int originalNotificationId, int censoredSummaryId,
+                                                 int originalUserId) {
+            // Reserve the top integers for summary notification ids
+            return (originalNotificationId < Integer.MAX_VALUE - 50)
+                    ? originalNotificationId : (censoredSummaryId >> 4) - originalUserId;
+        }
+
+        private int createCensoredSummaryId(int originalUserId) {
+            return Integer.MAX_VALUE - 1 - originalUserId;
+        }
+
+        private String createCensoredNotificationGroupKey(int originalUserId) {
+            return "OTHER_USERS_" + originalUserId;
         }
     }
 
