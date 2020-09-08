@@ -5893,33 +5893,35 @@ public class NotificationManagerService extends SystemService {
      *   are removed.
      */
     private class EnqueueCensoredNotificationRunnable implements Runnable {
-        private final int notificationSummaryId;
         private final String pkg;
-        private final int userId;
+        private final int originalUserId;
         private final int notificationId;
         private final CensoredSendState censoredSendState;
+        private final String originalTag;
 
+        // these are derived from the original information
         private final String notificationGroupKey;
-        private final String tag;
+        private final int notificationSummaryId;
 
-        EnqueueCensoredNotificationRunnable(String pkg, int userId, int notificationId,
+        EnqueueCensoredNotificationRunnable(String pkg, int originalUserId, int notificationId,
                                             String tag, CensoredSendState state) {
             this.pkg = pkg;
-            this.userId = userId;
+            this.originalUserId = originalUserId;
             this.censoredSendState = state;
+            originalTag = tag;
 
             // Group the censored notifications by user that sent them.
-            notificationGroupKey = createCensoredNotificationGroupKey(userId);
-            // In the case where userId == 0, save room for auto group summary id,
-            // which is Integer.MAX_VALUE
-            notificationSummaryId = createCensoredSummaryId(userId);
+            notificationGroupKey = createCensoredNotificationGroupKey(originalUserId);
+            notificationSummaryId = createCensoredSummaryId(originalUserId);
             this.notificationId = createCensoredNotificationId(notificationId,
-                    notificationSummaryId, userId);
-            this.tag = createCensoredNotificationTag(userId, pkg, tag);
+                    notificationSummaryId, originalUserId);
 
             Slog.d(TAG, "DEBUG: Generated censored notification id " + this.notificationId
-                    + " from user " + userId + ", " + pkg + ", orig id " + notificationId + ", tag "
-                    + this.tag + ", sending to " + ActivityManager.getCurrentUser());
+                    + " from user " + originalUserId + ", "
+                    + pkg +
+                    ", orig id " + notificationId +
+                    ", tag " + createCensoredNotificationTag(originalUserId, pkg, tag) +
+                    ", sending to " + ActivityManager.getCurrentUser());
         }
 
         @Override
@@ -5929,7 +5931,7 @@ public class NotificationManagerService extends SystemService {
 
             final int currentUserId = ActivityManager.getCurrentUser();
 
-            final String username = mUm.getUserInfo(userId).name;
+            final String username = mUm.getUserInfo(originalUserId).name;
             // Follows the way the app name is obtained in
             // com.android.systemui.statusbar.notification.collection.NotificationRowBinderImpl,
             // in the bindRow method.
@@ -5938,7 +5940,7 @@ public class NotificationManagerService extends SystemService {
                 final ApplicationInfo info = mPackageManagerClient.getApplicationInfoAsUser(
                         pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES
                                 | PackageManager.MATCH_DISABLED_COMPONENTS,
-                        userId);
+                        originalUserId);
                 if (info != null) {
                     appname = String.valueOf(mPackageManagerClient.getApplicationLabel(info));
                 }
@@ -5956,12 +5958,12 @@ public class NotificationManagerService extends SystemService {
                     com.android.internal.R.color.system_notification_accent_color);
 
             final Intent intent = new Intent(ACTION_SWITCH_USER)
-                    .putExtra(EXTRA_SWITCH_USER_USERID, userId)
+                    .putExtra(EXTRA_SWITCH_USER_USERID, originalUserId)
                     .setPackage(getContext().getPackageName())
                     .addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY
                                 | Intent.FLAG_RECEIVER_EXCLUDE_BACKGROUND);
             final PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(),
-                    userId, intent, PendingIntent.FLAG_UPDATE_CURRENT
+                    originalUserId, intent, PendingIntent.FLAG_UPDATE_CURRENT
                                     | PendingIntent.FLAG_ONE_SHOT);
 
             // We use the group alert behavior and the fact that the summary will never make
@@ -5987,8 +5989,8 @@ public class NotificationManagerService extends SystemService {
                             .build();
 
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
-                    MY_UID, MY_PID, tag, notificationId,
-                    censoredNotification, currentUserId);
+                    MY_UID, MY_PID, createCensoredNotificationTag(originalUserId, pkg, originalTag),
+                    notificationId, censoredNotification, currentUserId);
 
             // Group the censored notifications per user.
             final Notification censoredNotificationSummary =
@@ -6005,7 +6007,7 @@ public class NotificationManagerService extends SystemService {
                             .build();
 
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
-                    MY_UID, MY_PID, createCensoredSummaryTag(userId), notificationSummaryId,
+                    MY_UID, MY_PID, createCensoredSummaryTag(originalUserId), notificationSummaryId,
                     censoredNotificationSummary, currentUserId);
         }
 
@@ -6072,6 +6074,8 @@ public class NotificationManagerService extends SystemService {
         }
 
         private int createCensoredSummaryId(int originalUserId) {
+            // In the case where userId == 0, save room for auto group summary id,
+            // which is Integer.MAX_VALUE
             return Integer.MAX_VALUE - 1 - originalUserId;
         }
 
