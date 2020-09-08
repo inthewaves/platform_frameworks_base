@@ -5695,8 +5695,7 @@ public class NotificationManagerService extends SystemService {
                             // mNotificationLock.
                             mHandler.post(new EnqueueCensoredNotificationRunnable(
                                     r.sbn.getPackageName(), r.getUser().getIdentifier(),
-                                    r.sbn.getId(), r.getChannel().getImportance(),
-                                    r.isInterruptive(), state));
+                                    r.sbn.getId(), state));
                         }
                     } else {
                         Slog.e(TAG, "Not posting notification without small icon: " + notification);
@@ -5787,7 +5786,20 @@ public class NotificationManagerService extends SystemService {
         }
 
         // We can't use record.isIntercepted(). That setting is based on the foreground user.
-        return getSendStateFromDoNotDisturb(userId, record);
+        final CensoredSendState dndState = getSendStateFromDoNotDisturb(userId, record);
+        switch (dndState) {
+            case SEND_QUIET:
+                return CensoredSendState.SEND_QUIET;
+            case SEND_NORMAL:
+                if (record.getChannel().getImportance() == IMPORTANCE_LOW
+                        || !record.isInterruptive()) {
+                    return CensoredSendState.SEND_QUIET;
+                }
+                return CensoredSendState.SEND_NORMAL;
+            case DONT_SEND: // fall through
+            default:
+                return CensoredSendState.DONT_SEND;
+        }
     }
 
     /**
@@ -5867,6 +5879,7 @@ public class NotificationManagerService extends SystemService {
     /**
      * Constructs a censored notification that will be enqueued to be forwarded to the foreground
      * user.
+     * - The system sends the notification.
      * - Only the app's name, the intended user, and time of notification are shown.
      * - Every user has to opt in to having their notifications forwarded when they are active
      *   in the background.
@@ -5886,19 +5899,14 @@ public class NotificationManagerService extends SystemService {
         private final String pkg;
         private final int userId;
         private final int notificationId;
-        private final int channelImportance;
-        private final boolean isVisuallyInterruptive;
         private final CensoredSendState censoredSendState;
 
         private final String notificationGroupKey;
 
         EnqueueCensoredNotificationRunnable(String pkg, int userId, int notificationId,
-                                            int channelImportance, boolean isVisuallyInterruptive,
                                             CensoredSendState state) {
             this.pkg = pkg;
             this.userId = userId;
-            this.channelImportance = channelImportance;
-            this.isVisuallyInterruptive = isVisuallyInterruptive;
             this.censoredSendState = state;
 
             // Group the censored notifications by user that sent them.
@@ -5959,16 +5967,8 @@ public class NotificationManagerService extends SystemService {
                     userId, intent, PendingIntent.FLAG_UPDATE_CURRENT
                                     | PendingIntent.FLAG_ONE_SHOT);
 
-            // This sets the group alert behavior.
-            // If the original notification is a silent notification (IMPORTANCE_LOW), we set the
-            // group alert behavior of the censored notification to GROUP_ALERT_SUMMARY. This mutes
-            // the censored notification. The summary notification will never alert, as we
-            // set its alert behaviour to GROUP_ALERT_CHILDREN. Therefore, censored notifications
-            // coming from silent notifications will never audibly notify the foreground user.
-            final boolean shouldNotMakeSoundForCurrentUser =
-                    censoredSendState == CensoredSendState.SEND_QUIET
-                    || (channelImportance == IMPORTANCE_LOW) || !isVisuallyInterruptive;
-
+            // We use the group alert behavior and the fact that the summary will never make
+            // an audible alert to control whether censored notifications will make noise.
             final Notification censoredNotification =
                     new Notification.Builder(getContext(), SystemNotificationChannels.OTHER_USERS)
                             .addAction(new Notification.Action.Builder(null /* icon */,
@@ -5981,7 +5981,7 @@ public class NotificationManagerService extends SystemService {
                             .setSubText(subtext)
                             .setVisibility(Notification.VISIBILITY_PRIVATE)
                             .setGroup(notificationGroupKey)
-                            .setGroupAlertBehavior(shouldNotMakeSoundForCurrentUser
+                            .setGroupAlertBehavior(censoredSendState == CensoredSendState.SEND_QUIET
                                     ? Notification.GROUP_ALERT_SUMMARY
                                     : Notification.GROUP_ALERT_CHILDREN)
                             .setGroupSummary(false)
