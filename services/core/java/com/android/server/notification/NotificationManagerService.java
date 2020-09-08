@@ -205,6 +205,7 @@ import android.util.Log;
 import android.util.Pair;
 import android.util.Slog;
 import android.util.SparseArray;
+import android.util.SparseIntArray;
 import android.util.StatsLog;
 import android.util.Xml;
 import android.util.proto.ProtoOutputStream;
@@ -428,6 +429,8 @@ public class NotificationManagerService extends SystemService {
     final ArrayMap<Integer, ArrayMap<String, String>> mAutobundledSummaries = new ArrayMap<>();
     final ArrayList<ToastRecord> mToastQueue = new ArrayList<>();
     final ArrayMap<String, NotificationRecord> mSummaryByGroupKey = new ArrayMap<>();
+    @GuardedBy("mNotificationLock")
+    final SparseIntArray mCensoredNotificationsByOriginalUser = new SparseIntArray();
 
     // The last key in this list owns the hardware.
     ArrayList<String> mLights = new ArrayList<>();
@@ -1358,6 +1361,9 @@ public class NotificationManagerService extends SystemService {
                 }
                 // assistant is the only thing that cares about managed profiles specifically
                 mAssistants.onUserSwitched(userId);
+                synchronized (mNotificationLock) {
+                    mCensoredNotificationsByOriginalUser.clear();
+                }
             } else if (action.equals(Intent.ACTION_USER_ADDED)) {
                 final int userId = intent.getIntExtra(Intent.EXTRA_USER_HANDLE, USER_NULL);
                 if (userId != USER_NULL) {
@@ -1381,6 +1387,9 @@ public class NotificationManagerService extends SystemService {
                 cancelAllNotificationsInt(MY_UID, MY_PID, getContext().getPackageName(),
                         SystemNotificationChannels.OTHER_USERS, 0, 0, true, currentUserId,
                         REASON_USER_STOPPED, null);
+                synchronized (mNotificationLock) {
+                    mCensoredNotificationsByOriginalUser.clear();
+                }
             } else if (action.equals(Intent.ACTION_USER_UNLOCKED)) {
                 final int userId = intent.getIntExtra(Intent.EXTRA_USER_HANDLE, USER_NULL);
                 mUserProfiles.updateCache(context);
@@ -5503,6 +5512,50 @@ public class NotificationManagerService extends SystemService {
                     cancelGroupChildrenLocked(r, mCallingUid, mCallingPid, listenerName,
                             mSendDelete, childrenFlagChecker);
                     updateLightsLocked();
+
+                    if (getCensoredSendStateForNotification(r, false) != CensoredSendState.DONT_SEND) {
+                        // In here, the NotificationRecord r is for the original recipient, i.e. it
+                        // is not censored yet. So, mUserId is the original recipient.
+                        final String censoredTag = createCensoredNotificationTag(mUserId, mPkg, mTag);
+                        final int currentUserId = ActivityManager.getCurrentUser();
+                        final int censoredSummaryId = createCensoredSummaryId(mUserId);
+                        final int censoredNotificationId = createCensoredNotificationId(mId,
+                                censoredSummaryId, mUserId);
+                        final int originalCount = mCensoredNotificationsByOriginalUser.get(
+                                        mUserId, 0);
+                        Slog.d(TAG, "DEBUG: In removing runnable, original count is " + originalCount);
+
+
+                        Slog.d(TAG, "DEBUG: scheduling cancel of censored notification with"
+                                        + " tag " + censoredTag
+                                        + " censored id " + censoredNotificationId
+                                        + " originally for " + mUserId
+                                        + " delivered to " + currentUserId);
+
+                        if (originalCount <= 1) {
+                            Slog.d(TAG, "DEBUG: cancelling summary too");
+                            mHandler.scheduleCancelNotification(new CancelNotificationRunnable(
+                                    MY_UID, MY_PID, getContext().getPackageName(),
+                                    createCensoredSummaryTag(mUserId), censoredSummaryId, 0, 0, true,
+                                    currentUserId, mReason, -1, -1, null));
+                        }
+
+                        mHandler.scheduleCancelNotification(new CancelNotificationRunnable(MY_UID,
+                                MY_PID, getContext().getPackageName(), censoredTag,
+                                censoredNotificationId, 0, 0, true,
+                                currentUserId, mReason, -1, -1, null));
+                    } else if (isCensoredNotification(r, ActivityManager.getCurrentUser())) {
+                        // In here, the NotificationRecord r is NOT for the original recipient, so
+                        // mUserId is the foreground user.
+                        final int originalUserId = r.getNotification().extras.getInt("originalUser", -1);
+                        final int originalCount = mCensoredNotificationsByOriginalUser.get(
+                                originalUserId, 0);
+                        mCensoredNotificationsByOriginalUser.put(originalUserId, originalCount > 1 ?
+                                originalCount - 1 : 0);
+                        Slog.d(TAG, "DEBUG: In removing runnable, count for " + originalUserId +
+                                " is now "
+                                + (originalCount > 1 ? originalCount - 1 : 0));
+                    }
                 } else {
                     // No notification was found, assume that it is snoozed and cancel it.
                     if (mReason != REASON_SNOOZED) {
@@ -5688,13 +5741,23 @@ public class NotificationManagerService extends SystemService {
                         // Now that the notification is posted, we can now consider sending a
                         // censored copy of it to the foreground user (if the foreground user
                         // differs from the intended recipient).
-                        final CensoredSendState state = getCensoredSendStateForNotification(r);
+                        final CensoredSendState state = getCensoredSendStateForNotification(r, true);
                         if (state != CensoredSendState.DONT_SEND) {
                             // Give the information directly so that we can release
                             // mNotificationLock.
                             mHandler.post(new EnqueueCensoredNotificationRunnable(
                                     r.sbn.getPackageName(), r.getUser().getIdentifier(),
                                     r.sbn.getId(), r.sbn.getTag(), state));
+                        } else if (!r.isUpdate
+                                && isCensoredNotification(r, ActivityManager.getCurrentUser())) {
+                            final int originalUserId = r.getNotification().extras.getInt("originalUser", -1);
+                            final int originalCount =
+                                    mCensoredNotificationsByOriginalUser.get(
+                                            originalUserId, 0);
+                            mCensoredNotificationsByOriginalUser.put(originalUserId,
+                                    originalCount + 1);
+                            Slog.d(TAG, "DEBUG: In posting runnable, the new count for "
+                                + originalUserId + " is " + (originalCount + 1));
                         }
                     } else {
                         Slog.e(TAG, "Not posting notification without small icon: " + notification);
@@ -5730,12 +5793,22 @@ public class NotificationManagerService extends SystemService {
         }
     }
 
+    private boolean isCensoredNotification(NotificationRecord record, int currentUserId) {
+        final Bundle extras = record.sbn.getNotification().extras;
+        return record.getUser().getIdentifier() == currentUserId
+                && record.sbn.getPackageName().equals(getContext().getPackageName())
+                && record.getNotification().getChannelId()
+                        .equals(SystemNotificationChannels.OTHER_USERS)
+                && (extras != null && extras.getInt("originalUser", -1) != -1);
+    }
+
     enum CensoredSendState {
         DONT_SEND, SEND_NORMAL, SEND_QUIET
     }
 
     @GuardedBy("mNotificationLock")
-    private CensoredSendState getCensoredSendStateForNotification(NotificationRecord record) {
+    private CensoredSendState getCensoredSendStateForNotification(NotificationRecord record,
+                                                                  boolean checkDnd) {
         final int userId = record.getUser().getIdentifier();
         final int currentUserId = ActivityManager.getCurrentUser();
         if (currentUserId == userId || userId == UserHandle.USER_ALL) {
@@ -5781,6 +5854,10 @@ public class NotificationManagerService extends SystemService {
         // Check lock screen display and do not disturb lock screen settings.
         if (!shouldShowNotificationOnKeyguardForUser(userId, record)) {
             return CensoredSendState.DONT_SEND;
+        }
+
+        if (!checkDnd) {
+            return CensoredSendState.SEND_NORMAL;
         }
 
         // We can't use record.isIntercepted(). That setting is based on the foreground user.
@@ -5964,6 +6041,9 @@ public class NotificationManagerService extends SystemService {
                     userId, intent, PendingIntent.FLAG_UPDATE_CURRENT
                                     | PendingIntent.FLAG_ONE_SHOT);
 
+            final Bundle originalUserBundle = new Bundle(1);
+            originalUserBundle.putInt("originalUser", userId);
+
             // We use the group alert behavior and the fact that the summary will never make
             // an audible alert to control whether censored notifications will make noise.
             final Notification censoredNotification =
@@ -5984,6 +6064,7 @@ public class NotificationManagerService extends SystemService {
                             .setGroupSummary(false)
                             .setWhen(System.currentTimeMillis())
                             .setShowWhen(true)
+                            .setExtras(originalUserBundle)
                             .build();
 
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
@@ -6047,37 +6128,37 @@ public class NotificationManagerService extends SystemService {
             // try to keep the notification ids positive
             return Math.abs(base + originalNotificationId);
         }
+    }
 
-        /**
-         * @return a tag for the censored notification derived from the parameters. Note: the
-         * summary notification does not use this tag; see {@link #createCensoredSummaryTag(int)}.
-         */
-        private String createCensoredNotificationTag(int originalUserId, String pkg,
-                                                     @Nullable String originalTag) {
-            return "other_users_"
-                    + originalUserId + "_"
-                    + pkg + "_"
-                    + (originalTag != null ? originalTag : "");
-        }
+    /**
+     * @return a tag for the censored notification derived from the parameters. Note: the
+     * summary notification does not use this tag; see {@link #createCensoredSummaryTag(int)}.
+     */
+    private String createCensoredNotificationTag(int originalUserId, String pkg,
+                                                 @Nullable String originalTag) {
+        return "other_users_"
+                + originalUserId + "_"
+                + pkg + "_"
+                + (originalTag != null ? originalTag : "");
+    }
 
-        private String createCensoredSummaryTag(int originalUserId) {
-            return "other_users" + originalUserId;
-        }
+    private String createCensoredSummaryTag(int originalUserId) {
+        return "other_users" + originalUserId;
+    }
 
-        private int createCensoredNotificationId(int originalNotificationId, int censoredSummaryId,
-                                                 int originalUserId) {
-            // Reserve the top integers for summary notification ids
-            return (originalNotificationId < Integer.MAX_VALUE - 50)
-                    ? originalNotificationId : (censoredSummaryId >> 4) - originalUserId;
-        }
+    private int createCensoredNotificationId(int originalNotificationId, int censoredSummaryId,
+                                             int originalUserId) {
+        // Reserve the top integers for summary notification ids
+        return (originalNotificationId < Integer.MAX_VALUE - 50)
+                ? originalNotificationId : (censoredSummaryId >> 4) - originalUserId;
+    }
 
-        private int createCensoredSummaryId(int originalUserId) {
-            return Integer.MAX_VALUE - 1 - originalUserId;
-        }
+    private int createCensoredSummaryId(int originalUserId) {
+        return Integer.MAX_VALUE - 1 - originalUserId;
+    }
 
-        private String createCensoredNotificationGroupKey(int originalUserId) {
-            return "OTHER_USERS_" + originalUserId;
-        }
+    private String createCensoredNotificationGroupKey(int originalUserId) {
+        return "OTHER_USERS_" + originalUserId;
     }
 
     /**
