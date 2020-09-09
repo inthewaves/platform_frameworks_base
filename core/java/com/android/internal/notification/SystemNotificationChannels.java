@@ -186,6 +186,7 @@ public class SystemNotificationChannels {
         NotificationChannel otherUsers = new NotificationChannel(OTHER_USERS,
                 context.getString(R.string.notification_channel_other_users),
                 NotificationManager.IMPORTANCE_DEFAULT);
+        otherUsers.setDescription(context.getString(R.string.notification_channel_other_users_description));
         otherUsers.setBlockableSystem(true);
         channelsList.add(otherUsers);
 

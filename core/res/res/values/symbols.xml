@@ -3864,8 +3864,9 @@
   <java-symbol type="bool" name="reset_geo_fencing_check_after_boot_or_apm" />
   <java-symbol type="bool" name="config_enableAutoSuspend" />
 
-  <!-- Text shown when viewing channel settings for notifications from other users. -->
+  <!-- Text shown for notifications from other users. -->
   <java-symbol type="string" name="notification_channel_other_users" />
+  <java-symbol type="string" name="notification_channel_other_users_description" />
   <java-symbol type="string" name="other_users_notification_title" />
   <java-symbol type="string" name="other_users_notification_switch_user_action" />
 </resources>

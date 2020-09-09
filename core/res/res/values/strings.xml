@@ -5426,8 +5426,9 @@
     <!-- ChooserActivity - Alphabetically sorted apps list label. [CHAR LIMIT=NONE] -->
     <string name="chooser_all_apps_button_label">Apps list</string>
 
-    <!-- Text shown when viewing channel settings for notifications from other users. -->
+    <!-- Text shown for notifications from other users. -->
     <string name="notification_channel_other_users">Other users</string>
+    <string name="notification_channel_other_users_description">Notifications from other users\' lock screens</string>
     <string name="other_users_notification_title">Notification from <xliff:g id="app_name" example="Messages">%1$s</xliff:g> for <xliff:g id="username" example="John">%2$s</xliff:g></string>
     <string name="other_users_notification_switch_user_action">Switch to <xliff:g id="username" example="John">%1$s</xliff:g></string>
 </resources>
