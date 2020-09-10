@@ -23,10 +23,12 @@ import android.widget.Switch;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.R;
+import com.android.systemui.plugins.ActivityStarter;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.SecureSetting;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.statusbar.phone.KeyguardDismissUtil;
 import com.android.systemui.statusbar.policy.BatteryController;
 
 import javax.inject.Inject;
@@ -37,6 +39,7 @@ public class BatterySaverTile extends QSTileImpl<BooleanState> implements
     private final BatteryController mBatteryController;
     @VisibleForTesting
     protected final SecureSetting mSetting;
+    private final KeyguardDismissUtil mKeyguardDismissUtil;
 
     private int mLevel;
     private boolean mPowerSave;
@@ -46,7 +49,8 @@ public class BatterySaverTile extends QSTileImpl<BooleanState> implements
     private Icon mIcon = ResourceIcon.get(com.android.internal.R.drawable.ic_qs_battery_saver);
 
     @Inject
-    public BatterySaverTile(QSHost host, BatteryController batteryController) {
+    public BatterySaverTile(QSHost host, BatteryController batteryController,
+                            KeyguardDismissUtil keyguardDismissUtil) {
         super(host);
         mBatteryController = batteryController;
         mBatteryController.observe(getLifecycle(), this);
@@ -58,6 +62,7 @@ public class BatterySaverTile extends QSTileImpl<BooleanState> implements
                 handleRefreshState(null);
             }
         };
+        mKeyguardDismissUtil = keyguardDismissUtil;
     }
 
     @Override
@@ -97,7 +102,13 @@ public class BatterySaverTile extends QSTileImpl<BooleanState> implements
         if (getState().state == Tile.STATE_UNAVAILABLE) {
             return;
         }
-        mBatteryController.setPowerSaveMode(!mPowerSave);
+        mUiHandler.post(() -> {
+            final ActivityStarter.OnDismissAction dismissAction = () -> {
+                mBatteryController.setPowerSaveMode(!mPowerSave);
+                return false;
+            };
+            mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true /*requiresShadeOpen*/);
+        });
     }
 
     @Override
