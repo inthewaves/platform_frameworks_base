@@ -46,6 +46,7 @@ import com.android.systemui.plugins.qs.QSTile.SignalState;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.SignalTileView;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.statusbar.phone.KeyguardDismissUtil;
 import com.android.systemui.statusbar.phone.SystemUIDialog;
 import com.android.systemui.statusbar.policy.NetworkController;
 import com.android.systemui.statusbar.policy.NetworkController.IconState;
@@ -63,16 +64,18 @@ public class CellularTile extends QSTileImpl<SignalState> {
 
     private final CellSignalCallback mSignalCallback = new CellSignalCallback();
     private final ActivityStarter mActivityStarter;
+    private final KeyguardDismissUtil mKeyguardDismissUtil;
 
     @Inject
     public CellularTile(QSHost host, NetworkController networkController,
-            ActivityStarter activityStarter) {
+            ActivityStarter activityStarter, KeyguardDismissUtil keyguardDismissUtil) {
         super(host);
         mController = networkController;
         mActivityStarter = activityStarter;
         mDataController = mController.getMobileDataController();
         mDetailAdapter = new CellularDetailAdapter();
         mController.observe(getLifecycle(), mSignalCallback);
+        mKeyguardDismissUtil = keyguardDismissUtil;
     }
 
     @Override
@@ -98,16 +101,26 @@ public class CellularTile extends QSTileImpl<SignalState> {
         return getCellularSettingIntent();
     }
 
-    @Override
-    protected void handleClick() {
-        if (getState().state == Tile.STATE_UNAVAILABLE) {
-            return;
-        }
+    private void handleClickInner() {
         if (mDataController.isMobileDataEnabled()) {
             maybeShowDisableDialog();
         } else {
             mDataController.setMobileDataEnabled(true);
         }
+    }
+
+    @Override
+    protected void handleClick() {
+        if (getState().state == Tile.STATE_UNAVAILABLE) {
+            return;
+        }
+        mUiHandler.post(() -> {
+            final ActivityStarter.OnDismissAction dismissAction = () -> {
+                handleClickInner();
+                return false;
+            };
+            mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true /*requiresShadeOpen*/);
+        });
     }
 
     private void maybeShowDisableDialog() {
@@ -141,7 +154,13 @@ public class CellularTile extends QSTileImpl<SignalState> {
     @Override
     protected void handleSecondaryClick() {
         if (mDataController.isMobileDataSupported()) {
-            showDetail(true);
+            mUiHandler.post(() -> {
+                final ActivityStarter.OnDismissAction dismissAction = () -> {
+                    showDetail(true);
+                    return false;
+                };
+                mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true);
+            });
         } else {
             mActivityStarter
                     .postStartActivityDismissingKeyguard(getCellularSettingIntent(),0 /* delay */);
