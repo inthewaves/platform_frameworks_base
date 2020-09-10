@@ -23,9 +23,11 @@ import android.widget.Switch;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.R;
+import com.android.systemui.plugins.ActivityStarter;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.statusbar.phone.KeyguardDismissUtil;
 import com.android.systemui.statusbar.phone.ManagedProfileController;
 
 import javax.inject.Inject;
@@ -36,12 +38,15 @@ public class WorkModeTile extends QSTileImpl<BooleanState> implements
     private final Icon mIcon = ResourceIcon.get(R.drawable.stat_sys_managed_profile_status);
 
     private final ManagedProfileController mProfileController;
+    private final KeyguardDismissUtil mKeyguardDismissUtil;
 
     @Inject
-    public WorkModeTile(QSHost host, ManagedProfileController managedProfileController) {
+    public WorkModeTile(QSHost host, ManagedProfileController managedProfileController,
+                        KeyguardDismissUtil keyguardDismissUtil) {
         super(host);
         mProfileController = managedProfileController;
         mProfileController.observe(getLifecycle(), this);
+        mKeyguardDismissUtil = keyguardDismissUtil;
     }
 
     @Override
@@ -56,7 +61,13 @@ public class WorkModeTile extends QSTileImpl<BooleanState> implements
 
     @Override
     public void handleClick() {
-        mProfileController.setWorkModeEnabled(!mState.value);
+        mUiHandler.post(() -> {
+            final ActivityStarter.OnDismissAction dismissAction = () -> {
+                mProfileController.setWorkModeEnabled(!mState.value);
+                return false;
+            };
+            mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true /*requiresShadeOpen*/);
+        });
     }
 
     @Override
