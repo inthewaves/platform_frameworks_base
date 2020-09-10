@@ -43,6 +43,7 @@ import com.android.systemui.qs.QSDetailItems.Item;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSIconViewImpl;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.statusbar.phone.KeyguardDismissUtil;
 import com.android.systemui.statusbar.policy.NetworkController;
 import com.android.systemui.statusbar.policy.NetworkController.AccessPointController;
 import com.android.systemui.statusbar.policy.NetworkController.IconState;
@@ -65,16 +66,18 @@ public class WifiTile extends QSTileImpl<SignalState> {
     protected final WifiSignalCallback mSignalCallback = new WifiSignalCallback();
     private final ActivityStarter mActivityStarter;
     private boolean mExpectDisabled;
+    private final KeyguardDismissUtil mKeyguardDismissUtil;
 
     @Inject
     public WifiTile(QSHost host, NetworkController networkController,
-            ActivityStarter activityStarter) {
+                ActivityStarter activityStarter, KeyguardDismissUtil keyguardDismissUtil) {
         super(host);
         mController = networkController;
         mWifiController = mController.getAccessPointController();
         mDetailAdapter = (WifiDetailAdapter) createDetailAdapter();
         mActivityStarter = activityStarter;
         mController.observe(getLifecycle(), mSignalCallback);
+        mKeyguardDismissUtil = keyguardDismissUtil;
     }
 
     @Override
@@ -111,8 +114,7 @@ public class WifiTile extends QSTileImpl<SignalState> {
         return WIFI_SETTINGS;
     }
 
-    @Override
-    protected void handleClick() {
+    private void handleClickInner() {
         // Secondary clicks are header clicks, just toggle.
         mState.copyTo(mStateBeforeClick);
         boolean wifiEnabled = mState.value;
@@ -131,16 +133,34 @@ public class WifiTile extends QSTileImpl<SignalState> {
     }
 
     @Override
+    protected void handleClick() {
+        mUiHandler.post(() -> {
+            final ActivityStarter.OnDismissAction dismissAction = () -> {
+                handleClickInner();
+                return false;
+            };
+            mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true /*requiresShadeOpen*/);
+        });
+    }
+
+    @Override
     protected void handleSecondaryClick() {
         if (!mWifiController.canConfigWifi()) {
             mActivityStarter.postStartActivityDismissingKeyguard(
                     new Intent(Settings.ACTION_WIFI_SETTINGS), 0);
             return;
         }
-        showDetail(true);
-        if (!mState.value) {
-            mController.setWifiEnabled(true);
-        }
+        mUiHandler.post(() -> {
+            final ActivityStarter.OnDismissAction dismissAction = () -> {
+                showDetail(true);
+                if (!mState.value) {
+                    mController.setWifiEnabled(true);
+                }
+
+                return false;
+            };
+            mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true /*requiresShadeOpen*/);
+        });
     }
 
     @Override
