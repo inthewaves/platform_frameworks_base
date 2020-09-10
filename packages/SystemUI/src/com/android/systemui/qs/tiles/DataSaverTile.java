@@ -23,9 +23,11 @@ import android.widget.Switch;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.Prefs;
 import com.android.systemui.R;
+import com.android.systemui.plugins.ActivityStarter;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.statusbar.phone.KeyguardDismissUtil;
 import com.android.systemui.statusbar.phone.SystemUIDialog;
 import com.android.systemui.statusbar.policy.DataSaverController;
 import com.android.systemui.statusbar.policy.NetworkController;
@@ -36,12 +38,15 @@ public class DataSaverTile extends QSTileImpl<BooleanState> implements
         DataSaverController.Listener{
 
     private final DataSaverController mDataSaverController;
+    private final KeyguardDismissUtil mKeyguardDismissUtil;
 
     @Inject
-    public DataSaverTile(QSHost host, NetworkController networkController) {
+    public DataSaverTile(QSHost host, NetworkController networkController,
+                         KeyguardDismissUtil keyguardDismissUtil) {
         super(host);
         mDataSaverController = networkController.getDataSaverController();
         mDataSaverController.observe(getLifecycle(), this);
+        mKeyguardDismissUtil = keyguardDismissUtil;
     }
 
     @Override
@@ -53,8 +58,7 @@ public class DataSaverTile extends QSTileImpl<BooleanState> implements
     public Intent getLongClickIntent() {
         return new Intent(Settings.ACTION_DATA_SAVER_SETTINGS);
     }
-    @Override
-    protected void handleClick() {
+    private void handleClickInner() {
         if (mState.value
                 || Prefs.getBoolean(mContext, Prefs.Key.QS_DATA_SAVER_DIALOG_SHOWN, false)) {
             // Do it right away.
@@ -71,6 +75,17 @@ public class DataSaverTile extends QSTileImpl<BooleanState> implements
         dialog.setShowForAllUsers(true);
         dialog.show();
         Prefs.putBoolean(mContext, Prefs.Key.QS_DATA_SAVER_DIALOG_SHOWN, true);
+    }
+
+    @Override
+    protected void handleClick() {
+        mUiHandler.post(() -> {
+            final ActivityStarter.OnDismissAction dismissAction = () -> {
+                handleClickInner();
+                return false;
+            };
+            mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true /*requiresShadeOpen*/);
+        });
     }
 
     private void toggleDataSaver() {
