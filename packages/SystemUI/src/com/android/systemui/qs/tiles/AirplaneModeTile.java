@@ -38,6 +38,7 @@ import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.GlobalSetting;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.statusbar.phone.KeyguardDismissUtil;
 
 import javax.inject.Inject;
 
@@ -47,15 +48,17 @@ public class AirplaneModeTile extends QSTileImpl<BooleanState> {
     private final GlobalSetting mSetting;
     private final ActivityStarter mActivityStarter;
     private final BroadcastDispatcher mBroadcastDispatcher;
+    private final KeyguardDismissUtil mKeyguardDismissUtil;
 
     private boolean mListening;
 
     @Inject
     public AirplaneModeTile(QSHost host, ActivityStarter activityStarter,
-            BroadcastDispatcher broadcastDispatcher) {
+            BroadcastDispatcher broadcastDispatcher, KeyguardDismissUtil keyguardDismissUtil) {
         super(host);
         mActivityStarter = activityStarter;
         mBroadcastDispatcher = broadcastDispatcher;
+        mKeyguardDismissUtil = keyguardDismissUtil;
 
         mSetting = new GlobalSetting(mContext, mHandler, Global.AIRPLANE_MODE_ON) {
             @Override
@@ -70,8 +73,7 @@ public class AirplaneModeTile extends QSTileImpl<BooleanState> {
         return new BooleanState();
     }
 
-    @Override
-    public void handleClick() {
+    private void handleClickInner() {
         boolean airplaneModeEnabled = mState.value;
         MetricsLogger.action(mContext, getMetricsCategory(), !airplaneModeEnabled);
         if (!airplaneModeEnabled && TelephonyProperties.in_ecm_mode().orElse(false)) {
@@ -80,6 +82,17 @@ public class AirplaneModeTile extends QSTileImpl<BooleanState> {
             return;
         }
         setEnabled(!airplaneModeEnabled);
+    }
+
+    @Override
+    public void handleClick() {
+        mUiHandler.post(() -> {
+            final ActivityStarter.OnDismissAction dismissAction = () -> {
+                handleClickInner();
+                return false;
+            };
+            mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true /*requiresShadeOpen*/);
+        });
     }
 
     private void setEnabled(boolean enabled) {
