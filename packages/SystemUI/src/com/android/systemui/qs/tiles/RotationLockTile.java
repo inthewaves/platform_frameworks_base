@@ -25,9 +25,11 @@ import android.widget.Switch;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.R;
+import com.android.systemui.plugins.ActivityStarter;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.statusbar.phone.KeyguardDismissUtil;
 import com.android.systemui.statusbar.policy.RotationLockController;
 import com.android.systemui.statusbar.policy.RotationLockController.RotationLockControllerCallback;
 
@@ -38,12 +40,15 @@ public class RotationLockTile extends QSTileImpl<BooleanState> {
 
     private final Icon mIcon = ResourceIcon.get(com.android.internal.R.drawable.ic_qs_auto_rotate);
     private final RotationLockController mController;
+    private final KeyguardDismissUtil mKeyguardDismissUtil;
 
     @Inject
-    public RotationLockTile(QSHost host, RotationLockController rotationLockController) {
+    public RotationLockTile(QSHost host, RotationLockController rotationLockController,
+                            KeyguardDismissUtil keyguardDismissUtil) {
         super(host);
         mController = rotationLockController;
         mController.observe(this, mCallback);
+        mKeyguardDismissUtil = keyguardDismissUtil;
     }
 
     @Override
@@ -56,11 +61,21 @@ public class RotationLockTile extends QSTileImpl<BooleanState> {
         return new Intent(Settings.ACTION_DISPLAY_SETTINGS);
     }
 
-    @Override
-    protected void handleClick() {
+    private void handleClickInner() {
         final boolean newState = !mState.value;
         mController.setRotationLocked(!newState);
         refreshState(newState);
+    }
+
+    @Override
+    protected void handleClick() {
+        mUiHandler.post(() -> {
+            final ActivityStarter.OnDismissAction dismissAction = () -> {
+                handleClickInner();
+                return false;
+            };
+            mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true /*requiresShadeOpen*/);
+        });
     }
 
     @Override
