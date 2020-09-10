@@ -44,6 +44,7 @@ import com.android.systemui.qs.QSDetailItems;
 import com.android.systemui.qs.QSDetailItems.Item;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.statusbar.phone.KeyguardDismissUtil;
 import com.android.systemui.statusbar.policy.BluetoothController;
 
 import java.util.ArrayList;
@@ -59,16 +60,19 @@ public class BluetoothTile extends QSTileImpl<BooleanState> {
     private final BluetoothController mController;
     private final BluetoothDetailAdapter mDetailAdapter;
     private final ActivityStarter mActivityStarter;
+    private final KeyguardDismissUtil mKeyguardDismissUtil;
 
     @Inject
     public BluetoothTile(QSHost host,
             BluetoothController bluetoothController,
-            ActivityStarter activityStarter) {
+            ActivityStarter activityStarter,
+            KeyguardDismissUtil keyguardDismissUtil) {
         super(host);
         mController = bluetoothController;
         mActivityStarter = activityStarter;
         mDetailAdapter = (BluetoothDetailAdapter) createDetailAdapter();
         mController.observe(getLifecycle(), mCallback);
+        mKeyguardDismissUtil = keyguardDismissUtil;
     }
 
     @Override
@@ -81,13 +85,23 @@ public class BluetoothTile extends QSTileImpl<BooleanState> {
         return new BooleanState();
     }
 
-    @Override
-    protected void handleClick() {
+    private void handleClickInner() {
         // Secondary clicks are header clicks, just toggle.
         final boolean isEnabled = mState.value;
         // Immediately enter transient enabling state when turning bluetooth on.
         refreshState(isEnabled ? null : ARG_SHOW_TRANSIENT_ENABLING);
         mController.setBluetoothEnabled(!isEnabled);
+    }
+
+    @Override
+    protected void handleClick() {
+        mUiHandler.post(() -> {
+            final ActivityStarter.OnDismissAction dismissAction = () -> {
+                handleClickInner();
+                return false;
+            };
+            mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true /*requiresShadeOpen*/);
+        });
     }
 
     @Override
@@ -102,10 +116,17 @@ public class BluetoothTile extends QSTileImpl<BooleanState> {
                     new Intent(Settings.ACTION_BLUETOOTH_SETTINGS), 0);
             return;
         }
-        showDetail(true);
-        if (!mState.value) {
-            mController.setBluetoothEnabled(true);
-        }
+        mUiHandler.post(() -> {
+            final ActivityStarter.OnDismissAction dismissAction = () -> {
+                showDetail(true);
+                if (!mState.value) {
+                    mController.setBluetoothEnabled(true);
+                }
+                return false;
+            };
+            mKeyguardDismissUtil.executeWhenUnlocked(dismissAction, true /*requiresShadeOpen*/);
+        });
+
     }
 
     @Override
