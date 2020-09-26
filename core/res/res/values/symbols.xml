@@ -4053,4 +4053,9 @@
   <java-symbol type="array" name="config_notificationMsgPkgsAllowedAsConvos" />
 
   <java-symbol type="array" name="config_keep_warming_services" />
+  <!-- Text shown for notifications from other users. -->
+  <java-symbol type="string" name="notification_channel_other_users" />
+  <java-symbol type="string" name="notification_channel_other_users_description" />
+  <java-symbol type="string" name="other_users_notification_title" />
+  <java-symbol type="string" name="other_users_notification_switch_user_action" />
 </resources>

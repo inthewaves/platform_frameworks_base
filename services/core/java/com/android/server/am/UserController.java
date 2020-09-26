@@ -60,6 +60,7 @@ import android.content.PermissionChecker;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageManager;
 import android.content.pm.UserInfo;
+import android.provider.Settings;
 import android.os.BatteryStats;
 import android.os.Binder;
 import android.os.Build;
