@@ -6652,7 +6652,7 @@ public class NotificationManagerService extends SystemService {
         final int userId = record.getUser().getIdentifier();
         final int currentUserId = ActivityManager.getCurrentUser();
         if (currentUserId == userId || userId == UserHandle.USER_ALL) {
-            Slog.d(TAG, "DEBUG: not sending censored notif due current user");
+            if (DBG) Slog.d(TAG, "not sending censored notif due current user");
             return CensoredSendState.DONT_SEND;
         }
 
@@ -6661,69 +6661,71 @@ public class NotificationManagerService extends SystemService {
                 getContext().getContentResolver(),
                 Settings.Secure.SEND_CENSORED_NOTIFICATIONS_TO_CURRENT_USER, 0, userId) != 0;
         if (!userEnabledCensoredSending) {
-            Slog.d(TAG, "DEBUG: not sending censored notif due to sender not enabling setting");
+            if (DBG) Slog.d(TAG, "not sending censored notif due to sender not enabling setting");
             return CensoredSendState.DONT_SEND;
         }
 
         // Work profiles already can show their notification to their owner. Also, since these
         // notifications have switch user actions, do not show them if the switcher is disabled.
         if (mUm.isSameProfileGroup(currentUserId, userId) || !mUm.isUserSwitcherEnabled()) {
-            Slog.d(TAG, "DEBUG: not sending censored notif due to same profile or switcher isn't enabled");
+            if (DBG) Slog.d(TAG, "not sending censored notif due to same profile or switcher isn't enabled");
             return CensoredSendState.DONT_SEND;
         }
 
         if (record.isHidden()) {
-            Slog.d(TAG, "DEBUG: not sending censored notif due to hidden");
+            if (DBG) Slog.d(TAG, "not sending censored notif due to hidden");
             return CensoredSendState.DONT_SEND;
         }
 
         // Handles reoccurring update notifications (fixes issues like status update spamming).
         if (record.isUpdate && (record.getNotification().flags & FLAG_ONLY_ALERT_ONCE) != 0) {
-            Slog.d(TAG, "DEBUG: not sending censored notif due to update and only alerting once");
+            if (DBG) Slog.d(TAG, "not sending censored notif due to original being " +
+                    "an update that only alerts once");
             return CensoredSendState.DONT_SEND;
         }
 
         // Muted by listener
         final String disableEffects = disableNotificationEffects(record);
         if (disableEffects != null) {
-            Slog.d(TAG, "DEBUG: not sending censored notif due to disableEffects");
+            if (DBG) Slog.d(TAG, "not sending censored notif due to disableEffects");
             return CensoredSendState.DONT_SEND;
         }
 
         // Suppressed because another notification in its group handles alerting
         if (record.getSbn().isGroup()) {
             if (record.getNotification().suppressAlertingDueToGrouping()) {
-                Slog.d(TAG, "DEBUG: not sending censored notif due another notification in its group handles alerting");
+                if (DBG) Slog.d(TAG, "not sending censored notif due another" +
+                        "notification in its group handles alerting");
                 return CensoredSendState.DONT_SEND;
             }
         }
 
         // Check lock screen display settings.
         if (!shouldShowNotificationOnKeyguardForUser(userId, record)) {
-            Slog.d(TAG, "DEBUG: not sending censored notif due lock screen settings");
+            if (DBG) Slog.d(TAG, "not sending censored notif due lock screen settings");
             return CensoredSendState.DONT_SEND;
         }
 
         // Check do not disturb lock screen state.
         // We can't use record.isIntercepted(). That setting is based on the foreground user.
-        Slog.d(TAG, "DEBUG: processing DND state");
+        if (DBG) Slog.d(TAG, "processing DND state");
         final CensoredSendState dndState =
                 mZenModeHelper.getCensoredSendStateFromUserDndOnVisuals(record, userId);
         switch (dndState) {
             case SEND_QUIET:
-                Slog.d(TAG, "DEBUG: dndState is SEND_QUIET");
+                if (DBG) Slog.d(TAG, "dndState is SEND_QUIET");
                 return CensoredSendState.SEND_QUIET;
             case SEND_NORMAL:
-                Slog.d(TAG, "DEBUG: dndState is SEND_NORMAL");
+                if (DBG) Slog.d(TAG, "dndState is SEND_NORMAL");
                 if (record.getChannel().getImportance() == IMPORTANCE_LOW
                         || !record.isInterruptive()) {
-                    Slog.d(TAG, "DEBUG: using SEND_QUIET");
+                    if (DBG) Slog.d(TAG, "using SEND_QUIET");
                     return CensoredSendState.SEND_QUIET;
                 }
                 return CensoredSendState.SEND_NORMAL;
             case DONT_SEND: // fall through
             default:
-                Slog.d(TAG, "DEBUG: using DONT_SEND due to dndstate");
+                if (DBG) Slog.d(TAG, "using DONT_SEND due to dndstate");
                 return CensoredSendState.DONT_SEND;
         }
     }
@@ -6747,33 +6749,40 @@ public class NotificationManagerService extends SystemService {
         if (channel.getLockscreenVisibility() == Notification.VISIBILITY_SECRET
                 || channel.getImportance() == IMPORTANCE_MIN
                 || channel.getImportance() == IMPORTANCE_NONE) {
-            Slog.d(TAG, "DEBUG: shouldShowNotificationOnKeyguardForUser: channel.getLockscreenVisibility() == Notification.VISIBILITY_SECRET: " + (channel.getLockscreenVisibility() == Notification.VISIBILITY_SECRET));
-            Slog.d(TAG, "DEBUG: shouldShowNotificationOnKeyguardForUser: channel.getImportance() == IMPORTANCE_MIN: " + (channel.getImportance() == IMPORTANCE_MIN));
-            Slog.d(TAG, "DEBUG: shouldShowNotificationOnKeyguardForUser: channel.getImportance() == IMPORTANCE_NONE: " + (channel.getImportance() == IMPORTANCE_NONE));
+            if (DBG) {
+                Slog.d(TAG, "shouldShowNotificationOnKeyguardForUser: " +
+                        "channel.getLockscreenVisibility() == Notification.VISIBILITY_SECRET: " +
+                        (channel.getLockscreenVisibility() == Notification.VISIBILITY_SECRET));
+                Slog.d(TAG, " channel.getImportance() == IMPORTANCE_MIN: " +
+                        (channel.getImportance() == IMPORTANCE_MIN));
+                Slog.d(TAG, " channel.getImportance() == IMPORTANCE_NONE: " +
+                        (channel.getImportance() == IMPORTANCE_NONE));
+            }
             return false;
         }
 
         final boolean showByUser = Settings.Secure.getIntForUser(getContext().getContentResolver(),
                 Settings.Secure.LOCK_SCREEN_SHOW_NOTIFICATIONS, 0, userId) != 0;
         if (!showByUser) {
-            Slog.d(TAG, "DEBUG: shouldShowNotificationOnKeyguardForUser: LOCK_SCREEN_SHOW_NOTIFICATIONS is false");
-
+            if (DBG) Slog.d(TAG, "shouldShowNotificationOnKeyguardForUser: " +
+                    "LOCK_SCREEN_SHOW_NOTIFICATIONS is false");
             return false;
         }
 
         // Handles lockdown button.
         final int strongAuthFlags = new LockPatternUtils(getContext()).getStrongAuthForUser(userId);
         if ((strongAuthFlags & STRONG_AUTH_REQUIRED_AFTER_USER_LOCKDOWN) != 0) {
-            Slog.d(TAG, "DEBUG: shouldShowNotificationOnKeyguardForUser: user in lockdown");
+            if (DBG) Slog.d(TAG, "shouldShowNotificationOnKeyguardForUser: user in lockdown");
             return false;
         }
 
         if (channel.getImportance() == IMPORTANCE_LOW) {
-            final boolean print = Settings.Secure.getIntForUser(getContext().getContentResolver(),
+            final boolean isLockScreenShowingSilent =
+                    Settings.Secure.getIntForUser(getContext().getContentResolver(),
                     Settings.Secure.LOCK_SCREEN_SHOW_SILENT_NOTIFICATIONS, 1, userId) != 0;
-            Slog.d(TAG, "DEBUG: IMPORTANCE_LOW: are silent notifications shown? " + print);
-            return Settings.Secure.getIntForUser(getContext().getContentResolver(),
-                    Settings.Secure.LOCK_SCREEN_SHOW_SILENT_NOTIFICATIONS, 1, userId) != 0;
+            if (DBG) Slog.d(TAG, "shouldShowNotificationOnKeyguardForUser: IMPORTANCE_LOW:" +
+                    "are silent notifications shown? " + isLockScreenShowingSilent);
+            return isLockScreenShowingSilent;
         }
 
         return true;
@@ -6821,7 +6830,7 @@ public class NotificationManagerService extends SystemService {
             this.notificationId = createCensoredNotificationId(notificationId,
                     notificationSummaryId, originalUserId);
 
-            Slog.d(TAG, "DEBUG: Generated censored notification id " + this.notificationId
+            Slog.d(TAG, "Generated censored notification id " + this.notificationId
                     + " from user " + originalUserId + ", "
                     + pkg +
                     ", orig id " + notificationId +
