@@ -6707,7 +6707,8 @@ public class NotificationManagerService extends SystemService {
         // Check do not disturb lock screen state.
         // We can't use record.isIntercepted(). That setting is based on the foreground user.
         Slog.d(TAG, "DEBUG: processing DND state");
-        final CensoredSendState dndState = getSendStateFromDoNotDisturb(userId, record);
+        final CensoredSendState dndState =
+                mZenModeHelper.getCensoredSendStateFromUserDndOnVisuals(record, userId);
         switch (dndState) {
             case SEND_QUIET:
                 Slog.d(TAG, "DEBUG: dndState is SEND_QUIET");
@@ -6725,38 +6726,6 @@ public class NotificationManagerService extends SystemService {
                 Slog.d(TAG, "DEBUG: using DONT_SEND due to dndstate");
                 return CensoredSendState.DONT_SEND;
         }
-    }
-
-    /**
-     * Accounts for the user's do not disturb settings.
-     * For use in determining if a notification should be forwarded to the foreground user in
-     * censored form.
-     * - If user A has DND off, then user B will get the censored notifications normally
-     *   ({@link CensoredSendState#SEND_NORMAL}). (May still be hidden or muted depending on the
-     *   settings of the notification channel, like minimized or silent notifications)
-     * - If user A has DND on and isn't hiding notifications from notification shade/lock screen,
-     *   then user B will get muted censored notifications ({@link CensoredSendState#SEND_QUIET}).
-     * - If user A has DND on and is hiding notifications, then user B will not get any censored
-     *   notifications {@link CensoredSendState#DONT_SEND}, unless they're bypassed for user A.
-     * - If user A has DND on and a notification they receive bypasses DND, then user B will get the
-     *   notification normally ({@link CensoredSendState#SEND_NORMAL}).
-     *
-     * @param userId The identifier of the user to check the DND settings for.
-     * @param record The notification that is checked to see if it should be intercepted by DND.
-     * @return The censored sending state derived from the the notification and the user's do not
-     * disturb settings.
-     */
-    @GuardedBy("mNotificationLock")
-    private CensoredSendState getSendStateFromDoNotDisturb(int userId, NotificationRecord record) {
-        // ZenModeHelper works by only focusing on the foreground user's do not disturb settings.
-        // We need to make new methods in ZenModeHelper such as getConfigCopyForUser to expose a way
-        // to get the config and interception results for an arbitrary user.
-        final ZenModeConfig userConfig = mZenModeHelper.getConfigCopyForUser(userId);
-        if (userConfig == null) {
-            return CensoredSendState.SEND_NORMAL;
-        }
-
-        return mZenModeHelper.getCensoredSendStateWithZenModeConfigOnVisuals(record, userConfig);
     }
 
     /**
