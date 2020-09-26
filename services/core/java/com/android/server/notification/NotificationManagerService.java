@@ -6580,8 +6580,8 @@ public class NotificationManagerService extends SystemService {
                             // Give the information directly so that we can release
                             // mNotificationLock.
                             mHandler.post(new EnqueueCensoredNotificationRunnable(
-                                    r.sbn.getPackageName(), r.getUser().getIdentifier(),
-                                    r.sbn.getId(), r.sbn.getTag(), state));
+                                    r.getSbn().getPackageName(), r.getUser().getIdentifier(),
+                                    r.getSbn().getId(), r.getSbn().getTag(), state));
                         }
                     } else {
                         Slog.e(TAG, "Not posting notification without small icon: " + notification);
@@ -6685,7 +6685,7 @@ public class NotificationManagerService extends SystemService {
         }
 
         // Suppressed because another notification in its group handles alerting
-        if (record.sbn.isGroup()) {
+        if (record.getSbn().isGroup()) {
             if (record.getNotification().suppressAlertingDueToGrouping()) {
                 return CensoredSendState.DONT_SEND;
             }
@@ -6859,6 +6859,7 @@ public class NotificationManagerService extends SystemService {
                 }
             } catch (PackageManager.NameNotFoundException e) {
                 // Shouldn't be here; the original recipient should have the package!
+                // We will fallback to the package name.
             }
 
             final String title = getContext().getString(
