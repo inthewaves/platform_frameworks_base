@@ -6879,7 +6879,7 @@ public class NotificationManagerService extends SystemService {
                                 | Intent.FLAG_RECEIVER_EXCLUDE_BACKGROUND);
             final PendingIntent pendingIntentSwitchUser = PendingIntent.getBroadcast(getContext(),
                     originalUserId, intent, PendingIntent.FLAG_UPDATE_CURRENT
-                                    | PendingIntent.FLAG_ONE_SHOT);
+                            | PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_ONE_SHOT);
 
             // We use the group alert behavior and the fact that the summary will never make
             // an audible alert to control whether censored notifications will make noise.
