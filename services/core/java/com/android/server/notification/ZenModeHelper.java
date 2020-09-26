@@ -192,9 +192,10 @@ public class ZenModeHelper {
     }
 
     /**
-     * Determines the censored notification sending state depending on the ZenModeConfig given. For
-     * use in determining if a notification should be forwarded to the foreground user in censored
-     * form.
+     * Determines the censored notification sending state depending on the ZenModeConfig given. If
+     * the ZenModeConfig intercepts the notification and hides the notification, then don't send.
+     * For use in determining if a notification should be forwarded to the foreground user in
+     * censored form.
      *
      * No mConfig lock is needed; `config` is assumed to be a copy.
      * See {@link #computeZenMode()} for where the logic for computing zen mode was taken from.
@@ -202,8 +203,8 @@ public class ZenModeHelper {
      * policy was taken from. Both methods are combined here to be able to generate a consolidated
      * policy for an arbitrary ZenModeConfig.
      */
-    CensoredSendState getCensoredSendingStateWithZenModeConfig(NotificationRecord record,
-                                                               ZenModeConfig config) {
+    CensoredSendState getCensoredSendStateWithZenModeConfigOnVisuals(NotificationRecord record,
+                                                                     ZenModeConfig config) {
         // Steps to create the consolidated policy for the user, and compute the zen mode.
         final ZenPolicy zenPolicy = new ZenPolicy();
         int zenMode = Global.ZEN_MODE_OFF;

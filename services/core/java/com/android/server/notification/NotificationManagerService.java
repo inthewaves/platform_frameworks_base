@@ -6698,12 +6698,13 @@ public class NotificationManagerService extends SystemService {
             }
         }
 
-        // Check lock screen display and do not disturb lock screen settings.
+        // Check lock screen display settings.
         if (!shouldShowNotificationOnKeyguardForUser(userId, record)) {
             Slog.d(TAG, "DEBUG: not sending censored notif due lock screen settings");
             return CensoredSendState.DONT_SEND;
         }
 
+        // Check do not disturb lock screen state.
         // We can't use record.isIntercepted(). That setting is based on the foreground user.
         Slog.d(TAG, "DEBUG: processing DND state");
         final CensoredSendState dndState = getSendStateFromDoNotDisturb(userId, record);
@@ -6755,7 +6756,7 @@ public class NotificationManagerService extends SystemService {
             return CensoredSendState.SEND_NORMAL;
         }
 
-        return mZenModeHelper.getCensoredSendingStateWithZenModeConfig(record, userConfig);
+        return mZenModeHelper.getCensoredSendStateWithZenModeConfigOnVisuals(record, userConfig);
     }
 
     /**
