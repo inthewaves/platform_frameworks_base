@@ -25,6 +25,8 @@ import static android.service.notification.DNDModeProto.ROOT_CONFIG;
 import static com.android.internal.util.FrameworkStatsLog.ANNOTATION_ID_IS_UID;
 import static com.android.internal.util.FrameworkStatsLog.DND_MODE_RULE;
 
+import static com.android.server.notification.NotificationManagerService.CensoredSendState;
+
 import android.app.AppOpsManager;
 import android.app.AutomaticZenRule;
 import android.app.Notification;
@@ -187,6 +189,68 @@ public class ZenModeHelper {
         synchronized (mConfig) {
             return mFiltering.shouldIntercept(mZenMode, mConsolidatedPolicy, record);
         }
+    }
+
+    /**
+     * Determines the censored notification sending state depending on the ZenModeConfig given. For
+     * use in determining if a notification should be forwarded to the foreground user in censored
+     * form.
+     *
+     * No mConfig lock is needed; `config` is assumed to be a copy.
+     * See {@link #computeZenMode()} for where the logic for computing zen mode was taken from.
+     * See {@link #updateConsolidatedPolicy(String)} for where the logic for creating a consolidated
+     * policy was taken from. Both methods are combined here to be able to generate a consolidated
+     * policy for an arbitrary ZenModeConfig.
+     */
+    CensoredSendState getCensoredSendingStateWithZenModeConfig(NotificationRecord record,
+                                                               ZenModeConfig config) {
+        // Steps to create the consolidated policy for the user, and compute the zen mode.
+        final ZenPolicy zenPolicy = new ZenPolicy();
+        int zenMode = Global.ZEN_MODE_OFF;
+        boolean zenModeFromManualConfig = false;
+        if (config.manualRule != null) {
+            // Don't replace the zen mode anymore. Mirrors the line
+            //     if (mConfig.manualRule != null) return mConfig.manualRule.zenMode;
+            // from computeZenMode.
+            zenModeFromManualConfig = true;
+            zenMode = config.manualRule.zenMode;
+            if (zenMode == Global.ZEN_MODE_OFF) {
+                // zenMode won't be changed again anyway, so it won't be
+                // intercepted. Send normally.
+                return CensoredSendState.SEND_NORMAL;
+            }
+            applyCustomPolicy(zenPolicy, config.manualRule);
+        }
+
+        for (ZenRule automaticRule : config.automaticRules.values()) {
+            if (automaticRule.isAutomaticActive()) {
+                applyCustomPolicy(zenPolicy, automaticRule);
+                if (!zenModeFromManualConfig
+                        && zenSeverity(automaticRule.zenMode) > zenSeverity(zenMode)) {
+                    zenMode = automaticRule.zenMode;
+                }
+            }
+        }
+
+        if (zenMode == Global.ZEN_MODE_OFF) {
+            return CensoredSendState.SEND_NORMAL;
+        }
+
+        // Create the consolidated policy. (Maybe these can be cached?)
+        final NotificationManager.Policy policy = config.toNotificationPolicy(zenPolicy);
+        final boolean shouldIntercept = mFiltering.shouldIntercept(zenMode, policy, record);
+        if (shouldIntercept) {
+            // Notification does not bypass DND
+            if ((policy.suppressedVisualEffects &
+                    NotificationManager.Policy.SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
+                // If user A has DND on and is hiding notifications from notification shade/loc,
+                // then user B will not get any censored notifications
+                return CensoredSendState.DONT_SEND;
+            }
+            // Otherwise user B will get muted censored notifications
+            return CensoredSendState.SEND_QUIET;
+        }
+        return CensoredSendState.SEND_NORMAL;
     }
 
     public void addCallback(Callback callback) {
@@ -825,6 +889,18 @@ public class ZenModeHelper {
             return mConfig.copy();
         }
     }
+
+    /**
+     * @return a copy of the zen mode configuration for userId
+     */
+    ZenModeConfig getConfigCopyForUser(int userId) {
+        synchronized (mConfig) {
+            final ZenModeConfig config = mConfigs.get(userId);
+            return config != null ? config.copy() : null;
+        }
+    }
+
+
 
     /**
      * @return a copy of the zen mode consolidated policy
