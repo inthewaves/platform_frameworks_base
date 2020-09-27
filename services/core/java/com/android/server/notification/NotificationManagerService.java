@@ -1619,11 +1619,13 @@ public class NotificationManagerService extends SystemService {
                     mPreferencesHelper.onUserUnlocked(userId);
                 }
             } else if (action.equals(Intent.ACTION_USER_BACKGROUND)) {
+                // This is the user/profile that is going into the background.
                 final int userId = intent.getIntExtra(Intent.EXTRA_USER_HANDLE, -1);
                 if (userId >= 0) {
+                    // Clear censored notifications on switch.
                     cancelAllNotificationsInt(MY_UID, MY_PID, getContext().getPackageName(),
-                            SystemNotificationChannels.OTHER_USERS, 0, 0, true, userId,
-                            REASON_APP_CANCEL_ALL, null);
+                            SystemNotificationChannels.OTHER_USERS, 0, 0, true,
+                            userId, REASON_APP_CANCEL_ALL, null);
                 }
             }
         }
@@ -1637,7 +1639,7 @@ public class NotificationManagerService extends SystemService {
             }
 
             final int userIdToSwitchTo = intent.getIntExtra(EXTRA_SWITCH_USER_USERID, -1);
-            if (userIdToSwitchTo != -1) {
+            if (userIdToSwitchTo >= 0) {
                 try {
                     ActivityManager.getService().switchUser(userIdToSwitchTo);
                 } catch (RemoteException re) {
@@ -6648,6 +6650,7 @@ public class NotificationManagerService extends SystemService {
     }
 
     @GuardedBy("mNotificationLock")
+    @NonNull
     private CensoredSendState getCensoredSendStateForNotification(NotificationRecord record) {
         final int userId = record.getUser().getIdentifier();
         // This should cover not sending if it's meant for the current user or a work profile,
@@ -6791,22 +6794,26 @@ public class NotificationManagerService extends SystemService {
     }
 
     /**
-     * Constructs a censored notification that will be enqueued to be forwarded to the foreground
-     * user.
-     * - The system sends the notification.
-     * - Only the app's name, the intended user, and time of notification are shown.
-     * - Every user has to opt in to having their notifications forwarded when they are active
-     *   in the background.
-     * - A censored notification comes with an action to switch to the intended user.
-     * - The censored notifications are grouped by user.
-     * - The censored notifications respect the lock screen visibility and the do not disturb
-     *   settings of the original recipient user, but the Runnable does not enforce it. This
-     *   Runnable should be run after {@link #getCensoredSendStateForNotification}.
-     * - The censored notifications will be quiet for the current user if the original notification
-     *   is quiet. This includes silent channels and do not disturb muting.
-     * - The censored notifications are automatically cancelled whenever a user switch occurs
-     *   (i.e. when a broadcast with Intent.ACTION_USER_BACKGROUND is sent) and whenever users
-     *   are removed.
+     * <p>Constructs a censored notification that will be enqueued to be forwarded to the foreground
+     * user. This Runnable should be posted to a Handler after
+     * {@link #getCensoredSendStateForNotification} has been run, as this does not enforce any
+     * checks.</p>
+     *
+     * <ul>
+     *     <li>The system sends the notification.</li>
+     *     <li>Only the app's name, the intended user, and time of notification are shown.</li>
+     *     <li>Every user has to opt in to having their notifications forwarded when they are active
+     *     in the background.</li>
+     *     <li>A censored notification comes with an action to switch to the intended user.</li>
+     *     <li>The censored notifications are grouped by user.</li>
+     *     <li>The censored notifications respect the lock screen visibility and the do not disturb
+     *     settings of the original recipient user, but the Runnable does not enforce it.</li>
+     *     <li>The censored notifications will be quiet for the current user if the original
+     *     notification is quiet. This includes silent channels and do not disturb muting.</li>
+     *     <li>The censored notifications are automatically cancelled whenever a user switch occurs
+     *     (i.e. when a broadcast with Intent.ACTION_USER_BACKGROUND is sent) and whenever users
+     *     are removed.</li>
+     * </ul>
      */
     private class EnqueueCensoredNotificationRunnable implements Runnable {
         private final String pkg;
@@ -6819,8 +6826,17 @@ public class NotificationManagerService extends SystemService {
         private final String notificationGroupKey;
         private final int notificationSummaryId;
 
+        /**
+         *
+         * @param pkg Package of the app that sent the notification, used to get the name of the app
+         * @param originalUserId The original recipient of the to-be-censored notification.
+         * @param notificationId The original notification id of the to-be-censored notification.
+         * @param tag The original tag of the to-be-censored notification.
+         * @param state The CensoredSendState as computed by
+         * {@link #getCensoredSendStateForNotification}.
+         */
         EnqueueCensoredNotificationRunnable(String pkg, int originalUserId, int notificationId,
-                                            String tag, CensoredSendState state) {
+                                            String tag, @NonNull CensoredSendState state) {
             this.pkg = pkg;
             this.originalUserId = originalUserId;
             this.censoredSendState = state;
@@ -6831,13 +6847,6 @@ public class NotificationManagerService extends SystemService {
             notificationSummaryId = createCensoredSummaryId(originalUserId);
             this.notificationId = createCensoredNotificationId(notificationId,
                     notificationSummaryId, originalUserId);
-
-            Slog.d(TAG, "Generated censored notification id " + this.notificationId
-                    + " from user " + originalUserId + ", "
-                    + pkg +
-                    ", orig id " + notificationId +
-                    ", tag " + createCensoredNotificationTag(originalUserId, pkg, tag) +
-                    ", sending to " + ActivityManager.getCurrentUser());
         }
 
         @Override
@@ -6845,24 +6854,24 @@ public class NotificationManagerService extends SystemService {
             // Sanity check
             if (censoredSendState == CensoredSendState.DONT_SEND) return;
 
-            final int currentUserId = ActivityManager.getCurrentUser();
-
             final String username = mUm.getUserInfo(originalUserId).name;
             // Follows the way the app name is obtained in
             // com.android.systemui.statusbar.notification.collection.NotificationRowBinderImpl,
             // in the bindRow method.
             String appname = pkg;
-            try {
-                final ApplicationInfo info = mPackageManagerClient.getApplicationInfoAsUser(
-                        pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES
-                                | PackageManager.MATCH_DISABLED_COMPONENTS,
-                        originalUserId);
-                if (info != null) {
-                    appname = String.valueOf(mPackageManagerClient.getApplicationLabel(info));
+            if (pkg != null) {
+                try {
+                    final ApplicationInfo info = mPackageManagerClient.getApplicationInfoAsUser(
+                            pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES
+                                    | PackageManager.MATCH_DISABLED_COMPONENTS,
+                            originalUserId);
+                    if (info != null) {
+                        appname = String.valueOf(mPackageManagerClient.getApplicationLabel(info));
+                    }
+                } catch (PackageManager.NameNotFoundException e) {
+                    // Shouldn't be here; the original recipient should have the package!
+                    // We will fallback to the package name.
                 }
-            } catch (PackageManager.NameNotFoundException e) {
-                // Shouldn't be here; the original recipient should have the package!
-                // We will fallback to the package name.
             }
 
             final String title = getContext().getString(
@@ -6905,6 +6914,15 @@ public class NotificationManagerService extends SystemService {
                             .setShowWhen(true)
                             .build();
 
+            if (DBG) {
+                Slog.d(TAG, "Generated censored notification with id " + notificationId
+                        + ", from user " + originalUserId
+                        + ", for package " + pkg
+                        + ", tag " + createCensoredNotificationTag(originalUserId, pkg, originalTag)
+                        + ", sending to " + ActivityManager.getCurrentUser());
+            }
+
+            final int currentUserId = ActivityManager.getCurrentUser();
             enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
                     MY_UID, MY_PID, createCensoredNotificationTag(originalUserId, pkg, originalTag),
                     notificationId, censoredNotification, currentUserId);
@@ -6929,58 +6947,20 @@ public class NotificationManagerService extends SystemService {
         }
 
         /**
-         * Derives a censored notification id from the package name, userId, and the original
-         * notification id.
-         *
-         * The point of this is to reduce chance that there will be notification id collisions.
-         * Suppose a notification X is censored and forwarded; this generates a censored
-         * notification Y. We want a one-to-one correspondence between X.id and Y.id so that we can
-         * support things like not spamming users with update notifications that originally use the
-         * same id (but still alerts the foreground user if an update notification is supposed to
-         * make another alert) and possibly enable cancelling of censored notifications from the
-         * original user. However, there's a problem.
-         *
-         * Normally, notification ids are only unique within an app; different apps on the same user
-         * can use the same notification id numbers without a problem. However, currently censored
-         * notifications only go through one package---the system "android" package. Different apps
-         * that use the same notification ids will run into problems if we just use the notification
-         * ids as is (i.e., older censored notifications may get overridden by newer ones). Moreover,
-         * different users that use the same package may use the exact same notification ids! So, we
-         * cannot use the original notification ids as they are for the censored notification ids.
-         *
-         * This implements Cantor's pairing function, which is a bijection N x N -> N. However, the
-         * integers in Java are finite; this doesn't really make it a bijection due to overflows.
-         * Nevertheless, it's a best effort to try to associate the pair (userId, pkg) uniquely with
-         * a natural number, `base`. Then, we add the original id to give it some offset.
-         *
-         * For example, from user 0, im.vector.app, and originalNotificationId 0, the derived id is
-         * 614335056. From user 10, im.vector.app, and originalNotificationId 0, the derived id is
-         * 3433199.
-         *
-         * EDIT: Might not be needed, because we can just identify based on the tag.
-         */
-        private int deriveNotificationId(String pkg, int userId, int originalNotificationId) {
-            // pad the package name, get a hash code, then make the hash smaller
-            final int b = ((userId << 2) + pkg).hashCode() >> 11;
-            final int base = Math.abs((((userId + b) * (userId + b + 1)) >> 1) + b);
-            // try to keep the notification ids positive
-            return Math.abs(base + originalNotificationId);
-        }
-
-        /**
          * @return a tag for the censored notification derived from the parameters. Note: the
          * summary notification does not use this tag; see {@link #createCensoredSummaryTag(int)}.
+         * This helps uniquely identify this notification to prevent notification id collisions.
          */
         private String createCensoredNotificationTag(int originalUserId, String pkg,
                                                      @Nullable String originalTag) {
             return "other_users_"
                     + originalUserId + "_"
-                    + pkg + "_"
-                    + (originalTag != null ? originalTag : "");
+                    + pkg
+                    + (originalTag != null ? "_" + originalTag : "");
         }
 
         private String createCensoredSummaryTag(int originalUserId) {
-            return "other_users" + originalUserId;
+            return "other_users_" + originalUserId;
         }
 
         private int createCensoredNotificationId(int originalNotificationId, int censoredSummaryId,
