@@ -226,11 +226,15 @@ public class ZenModeHelper {
      * policy for an arbitrary ZenModeConfig. We can't use those methods directly, since they
      * operate on only the foreground user.</p>
      *
-     * @implNote This doesn't respect automatic rules for background users that change their state
+     * @implNote <p>This doesn't respect automatic rules for background users that change their state
      * (i.e. become active or inactive), because the calendar/timers to do so are only checked for
-     * the foreground user. e.g., If a background user has DND on due to an automatic rule, and that
+     * the foreground user. (e.g., If a background user has DND on due to an automatic rule, and that
      * DND rule turns off while the user is still backgrounded, then this method will still treat
-     * notifications as intercepted by DND.
+     * notifications as intercepted by DND.)</p>
+     *
+     * <p>We could try to do something like make
+     * {@link ZenModeConfig#parseAutomaticRuleEndTime(Context, Uri)} public and test that against
+     * System.currentTimeMillis.</p>, but that would make this more complicated.
      *
      * @param record The notification that is checked to see if it should be intercepted by DND.
      * @param userId The identifier of the user to check the DND settings for.
