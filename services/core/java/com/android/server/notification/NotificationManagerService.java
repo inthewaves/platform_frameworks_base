@@ -6651,6 +6651,9 @@ public class NotificationManagerService extends SystemService {
     private CensoredSendState getCensoredSendStateForNotification(NotificationRecord record) {
         final int userId = record.getUser().getIdentifier();
         final int currentUserId = ActivityManager.getCurrentUser();
+
+        Slog.d(TAG, "DEBUG: mUserProfiles.isCurrentProfile(" + userId + "): " + mUserProfiles.isCurrentProfile(userId));
+
         if (currentUserId == userId || userId == UserHandle.USER_ALL) {
             if (DBG) Slog.d(TAG, "not sending censored notif due current user");
             return CensoredSendState.DONT_SEND;
