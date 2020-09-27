@@ -6650,12 +6650,11 @@ public class NotificationManagerService extends SystemService {
     @GuardedBy("mNotificationLock")
     private CensoredSendState getCensoredSendStateForNotification(NotificationRecord record) {
         final int userId = record.getUser().getIdentifier();
-        final int currentUserId = ActivityManager.getCurrentUser();
-
-        Slog.d(TAG, "DEBUG: mUserProfiles.isCurrentProfile(" + userId + "): " + mUserProfiles.isCurrentProfile(userId));
-
-        if (currentUserId == userId || userId == UserHandle.USER_ALL) {
-            if (DBG) Slog.d(TAG, "not sending censored notif due current user");
+        // This should cover not sending if it's meant for the current user or a work profile,
+        // since mUserProfiles updates its cache using UserManager#getProfiles which "Returns list
+        // of the profiles of userId including userId itself."
+        if (userId == UserHandle.USER_ALL || mUserProfiles.isCurrentProfile(userId)) {
+            if (DBG) Slog.d(TAG, "not sending censored notif: current user or a profile");
             return CensoredSendState.DONT_SEND;
         }
 
@@ -6664,14 +6663,14 @@ public class NotificationManagerService extends SystemService {
                 getContext().getContentResolver(),
                 Settings.Secure.SEND_CENSORED_NOTIFICATIONS_TO_CURRENT_USER, 0, userId) != 0;
         if (!userEnabledCensoredSending) {
-            if (DBG) Slog.d(TAG, "not sending censored notif due to sender not enabling setting");
+            if (DBG) Slog.d(TAG, "not sending censored notif due to sender setting off");
             return CensoredSendState.DONT_SEND;
         }
 
         // Work profiles already can show their notification to their owner. Also, since these
         // notifications have switch user actions, do not show them if the switcher is disabled.
-        if (mUm.isSameProfileGroup(currentUserId, userId) || !mUm.isUserSwitcherEnabled()) {
-            if (DBG) Slog.d(TAG, "not sending censored notif due to same profile or switcher isn't enabled");
+        if (!mUm.isUserSwitcherEnabled()) {
+            if (DBG) Slog.d(TAG, "not sending censored notif since switcher isn't enabled");
             return CensoredSendState.DONT_SEND;
         }
 
