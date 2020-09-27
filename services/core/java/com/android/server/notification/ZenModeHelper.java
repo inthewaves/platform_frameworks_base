@@ -192,28 +192,45 @@ public class ZenModeHelper {
     }
 
     /**
-     * Determines the censored notification sending state depending on the ZenModeConfig given. If
-     * the ZenModeConfig intercepts the notification and hides the notification, then don't send.
-     * For use in determining if a notification should be forwarded to the foreground user in
-     * censored form.
+     * <p>Determines the censored notification sending state depending on an arbitrary user's
+     * ZenModeConfig. For use in determining if a notification should be forwarded to the foreground
+     * user in censored form.</p>
      *
-     * Suppose user A is a background user and user B is the foreground user.
-     * - If user A has DND off, then user B will get the censored notifications normally
-     *   ({@link CensoredSendState#SEND_NORMAL}). (May still be hidden or muted depending on the
-     *   settings of the notification channel, like minimized or silent notifications)
-     * - If user A has DND on and isn't hiding notifications from notification shade/lock screen,
-     *   then user B will get muted censored notifications ({@link CensoredSendState#SEND_QUIET}).
-     * - If user A has DND on and is hiding notifications, then user B will not get any censored
-     *   notifications {@link CensoredSendState#DONT_SEND}, unless user A manually set it so that
-     *   the notification bypasses DND
-     *   - If it bypasses DND, then user B will get the notification normally
-     *     ({@link CensoredSendState#SEND_NORMAL}).
+     * <p>Suppose user A is a background user and user B is the foreground user, and that all other
+     * checks for sending censored notifications have passed.</p>
      *
-     * No mConfig lock is needed; we work on a copy of the ZenModeConfig.
-     * See {@link #computeZenMode()} for where the logic for computing zen mode was taken from.
+     * <ul>
+     * <li>
+     *     If user A has DND off, then user B will get the censored notifications normally
+     *     ({@link CensoredSendState#SEND_NORMAL}). (This means that user B can get a notification
+     *     that makes noise.)
+     * </li>
+     * <li>
+     *     If user A has DND on and isn't hiding notifications from notification shade/lock screen,
+     *     then user B will get muted censored notifications ({@link CensoredSendState#SEND_QUIET}).
+     * </li>
+     * <li>
+     *     If user A has DND on and is hiding notifications, then user B will not get any censored
+     *     notifications {@link CensoredSendState#DONT_SEND}, unless user A manually set it so that
+     *     the notification bypasses DND
+     *
+     *     <ul><li>If it bypasses DND, then user B will get the notification normally
+     *     ({@link CensoredSendState#SEND_NORMAL}).</li></ul>
+     * </ul>
+     *
+     * <p>No mConfig lock is needed during parsing; we work on a copy of the ZenModeConfig.</p>
+     *
+     * <p>See {@link #computeZenMode()} for where the logic for computing zen mode was taken from.
      * See {@link #updateConsolidatedPolicy(String)} for where the logic for creating a consolidated
      * policy was taken from. Both methods are combined here to be able to generate a consolidated
-     * policy for an arbitrary ZenModeConfig.
+     * policy for an arbitrary ZenModeConfig. We can't use those methods directly, since they
+     * operate on only the foreground user.</p>
+     *
+     * @implNote This doesn't respect automatic rules for background users that change their state
+     * (i.e. become active or inactive), because the calendar/timers to do so are only checked for
+     * the foreground user. e.g., If a background user has DND on due to an automatic rule, and that
+     * DND rule turns off while the user is still backgrounded, then this method will still treat
+     * notifications as intercepted by DND.
      *
      * @param record The notification that is checked to see if it should be intercepted by DND.
      * @param userId The identifier of the user to check the DND settings for.
@@ -227,24 +244,26 @@ public class ZenModeHelper {
             return CensoredSendState.SEND_NORMAL;
         }
 
-        // Steps to create the consolidated policy for the user, and compute the zen mode.
+        // We create the consolidated policy for the user, and simultaneously compute the zen mode.
+        // The structure is derived from the other methods (see doc comment).
         final ZenPolicy zenPolicy = new ZenPolicy();
         int zenMode = Global.ZEN_MODE_OFF;
         boolean isZenModeFromManualConfig = false;
         if (config.manualRule != null) {
             // Don't replace the zen mode anymore. This mirrors the line
-            //     if (mConfig.manualRule != null) return mConfig.manualRule.zenMode;
+            // `if (mConfig.manualRule != null) return mConfig.manualRule.zenMode;`
             // from computeZenMode.
             isZenModeFromManualConfig = true;
             zenMode = config.manualRule.zenMode;
             if (zenMode == Global.ZEN_MODE_OFF) {
                 // zenMode won't be changed again anyway, so it won't be intercepted. Send normally
-                // and avoid constructing a consolidated policy.
+                // to avoid constructing a consolidated policy.
                 return CensoredSendState.SEND_NORMAL;
             }
             applyCustomPolicy(zenPolicy, config.manualRule);
         }
 
+        // This is apparently how automatic rules are parsed.
         for (ZenRule automaticRule : config.automaticRules.values()) {
             if (automaticRule.isAutomaticActive()) {
                 applyCustomPolicy(zenPolicy, automaticRule);
@@ -256,7 +275,7 @@ public class ZenModeHelper {
         }
 
         if (zenMode == Global.ZEN_MODE_OFF) {
-            //Send normally and avoid constructing a consolidated policy.
+            // Send normally to avoid constructing a consolidated policy.
             return CensoredSendState.SEND_NORMAL;
         }
 
@@ -919,8 +938,8 @@ public class ZenModeHelper {
      * censored form.
      *
      * ZenModeHelper works by only focusing on the *foreground* user's do not disturb settings.
-     * We need to make new methods in ZenModeHelper such as getConfigCopyForUser to expose a way
-     * to get the config and interception results for an arbitrary user.
+     * This is needed to expose a way to get the config and interception results for an arbitrary
+     * user without getting affected by any changes.
      *
      * @return a copy of the zen mode configuration for the given userId
      */
