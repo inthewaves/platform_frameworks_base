@@ -26,10 +26,12 @@
         <package android:name="com.example.helloworld" />
     </queries>
 
-    <application android:label="Cts Package Uninstaller Tests">
+    <application
+        android:label="GrapheneOS special runtime permissions tests"
+        android:testOnly="true">
         <uses-library android:name="android.test.runner" />
 
-        <activity android:name="grapheneos.srtpermtests.packageinstaller.ArchiveSrtPermsParameterizedTest$Launcher"
+        <activity android:name="grapheneos.srtpermtests.packageinstaller.BaseArchiveTest$Launcher"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -40,7 +42,7 @@
             </intent-filter>
         </activity>
 
-        <receiver android:name="grapheneos.srtpermtests.packageinstaller.ArchiveSrtPermsParameterizedTest$UnarchiveBroadcastReceiver"
+        <receiver android:name="grapheneos.srtpermtests.packageinstaller.BaseArchiveTest$UnarchiveBroadcastReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>

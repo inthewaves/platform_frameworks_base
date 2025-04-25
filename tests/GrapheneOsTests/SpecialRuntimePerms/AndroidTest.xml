@@ -34,8 +34,9 @@
 
     <target_preparer class="com.android.tradefed.targetprep.suite.SuiteApkInstaller">
         <option name="cleanup-apks" value="true" />
+        <!-- Install as test apk to allow reading Settings.Secure -->
+        <option name="install-arg" value="-t -r" />
         <option name="test-file-name" value="SpecialRuntimePermsTestCases.apk" />
-        <option name="test-file-name" value="GtsArchiveTestApp.apk" />
     </target_preparer>
 
     <test class="com.android.tradefed.testtype.AndroidJUnitTest" >

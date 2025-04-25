@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package {
-    default_team: "trendy_team_framework_android_packages",
-    default_applicable_licenses: ["Android-Apache-2.0"],
-}
-
 java_defaults {
     name: "gos_hello_world_defaults",
     defaults: ["cts_defaults"],
@@ -42,9 +37,6 @@ android_test {
     defaults: ["gos_hello_world_defaults"],
     srcs: ["src5/**/*.java"],
     manifest: "AndroidManifestV1.xml",
-    test_suites: [
-        "general-tests",
-    ],
     v4_signature: true,
 }
 
@@ -54,8 +46,5 @@ android_test {
     defaults: ["gos_hello_world_defaults"],
     srcs: ["src5/**/*.java"],
     manifest: "AndroidManifestV2.xml",
-    test_suites: [
-        "general-tests",
-    ],
     v4_signature: true,
 }
