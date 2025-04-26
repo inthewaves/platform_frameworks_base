@@ -55,6 +55,7 @@ import android.util.Log;
 
 import androidx.annotation.CallSuper;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.uiautomator.By;
 import androidx.test.uiautomator.SearchCondition;
@@ -88,8 +89,8 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * Tests that the granted states of special runtime permissions are preserved after unarchiving.
  */
-public abstract class BaseArchiveTest {
-    private static final String LOG_TAG = BaseArchiveTest.class.getSimpleName();
+public abstract class BaseInstallerTest {
+    private static final String LOG_TAG = BaseInstallerTest.class.getSimpleName();
 
     protected static final String SYSTEM_PACKAGE_NAME = "android";
 
@@ -108,8 +109,6 @@ public abstract class BaseArchiveTest {
     protected PackageInstaller mPackageInstaller;
     protected LauncherApps mLauncherApps;
     protected String mDefaultHome;
-
-    protected static final String SAMPLE_APK_BASE = "/data/local/tmp/cts/uninstall/";
 
     @Rule
     public final CheckFlagsRule mCheckFlagsRule = DeviceFlagsValueProvider.createCheckFlagsRule();
@@ -146,18 +145,18 @@ public abstract class BaseArchiveTest {
         mLauncherApps.setArchiveCompatibility(options);
         // Prepare device to same state to make tests more independent.
         prepareDevice();
-        for (final String pkg : getTestAppPackagesList()) {
+        for (final String pkg : getTestAppPackageNames()) {
             abandonPendingUnarchivalSessions(pkg);
         }
     }
 
-    protected abstract String[] getTestAppPackagesList();
+    protected abstract String[] getTestAppPackageNames();
 
     @After
     @CallSuper
     public void tearDown() {
         // uninstallPackage(ARCHIVE_APP_PACKAGE_NAME);
-        for (final String pkg : getTestAppPackagesList()) {
+        for (final String pkg : getTestAppPackageNames()) {
             uninstallPackage(pkg);
         }
         if (mDefaultHome != null) {
@@ -267,6 +266,48 @@ public abstract class BaseArchiveTest {
         }
         var installResultReceiver = new InstallResultReceiver();
         session.commit(installResultReceiver.getIntentSender(mContext));
+    }
+
+
+    protected void installApkByInstallerSession(final String packageName, final String apk,
+            @Nullable final Integer expectedStatus,
+            @Nullable final String expectedMsg) throws Exception {
+        final PackageInstaller installer = mPackageInstaller;
+        final PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(
+                PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        params.setAppPackageName(packageName);
+        params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+        // params.setAutoInstallDependenciesEnabled(enableAutoInstallDependencies);
+
+        final int sessionId = installer.createSession(params);
+        PackageInstaller.Session session = installer.openSession(sessionId);
+
+        File file = new File(apk);
+        try (OutputStream os = session.openWrite("test", 0, file.length());
+             InputStream is = new FileInputStream(file)) {
+            writeFullStream(is, os, file.length());
+        }
+
+        LocalIntentSender unarchiveSender = new LocalIntentSender();
+        session.commit(unarchiveSender.getIntentSender());
+        if (expectedStatus != null) {
+            Intent unarchiveIntent = unarchiveSender.pollResult(10, TimeUnit.SECONDS);
+            assertThat(unarchiveIntent.getIntExtra(PackageInstaller.EXTRA_STATUS,
+                    Integer.MIN_VALUE)).isEqualTo(expectedStatus);
+        }
+        /*
+        session.commit(new IntentSender((IIntentSender) new IIntentSender.Stub() {
+            @Override
+            public void send(int code, Intent intent, String resolvedType,
+                    IBinder allowlistToken, IIntentReceiver finishedReceiver,
+                    String requiredPermission, Bundle options) {
+                status.complete(
+                        intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Integer.MIN_VALUE));
+                statusMessage.complete(
+                        intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE));
+            }
+        }));
+        */
     }
 
     protected static void writeFullStream(InputStream inputStream, OutputStream outputStream,

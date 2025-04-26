@@ -58,7 +58,16 @@
         <option name="run-command" value="cmd statusbar collapse" />
         <!-- dismiss all system dialogs before launch test -->
         <option name="run-command" value="am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS" />
+
+        <option name="run-command" value="pm uninstall com.android.cts.install.lib.testapp.A" />
+        <option name="run-command" value="pm uninstall com.android.cts.install.lib.testapp.B" />
+        <option name="run-command" value="pm uninstall com.android.cts.install.lib.testapp.C" />
+        <option name="teardown-command" value="pm uninstall com.android.cts.install.lib.testapp.A" />
+        <option name="teardown-command" value="pm uninstall com.android.cts.install.lib.testapp.B" />
+        <option name="teardown-command" value="pm uninstall com.android.cts.install.lib.testapp.C" />
     </target_preparer>
+
+
 
     <!-- Load additional APKs onto device -->
     <target_preparer class="com.android.compatibility.common.tradefed.targetprep.FilePusher">

@@ -1,0 +1,28 @@
+package grapheneos.srtpermtests.packageinstaller
+
+data class TestApk(
+    val packageName: String,
+    val apkPath: String,
+)
+
+object TestApks {
+    const val SAMPLE_APK_BASE: String = "/data/local/tmp/cts/uninstall/"
+
+    @JvmField
+    val archiveApk = TestApk(
+        packageName = "android.packageinstaller.archive.cts.archiveapp",
+        apkPath = SAMPLE_APK_BASE + "GtsArchiveTestApp.apk",
+    )
+
+    @JvmField
+    val helloWorldV1 = TestApk(
+        packageName = "com.example.helloworld",
+        apkPath = SAMPLE_APK_BASE + "GosHelloWorldAppV1.apk",
+    )
+
+    @JvmField
+    val helloWorldV2 = TestApk(
+        packageName = helloWorldV1.packageName,
+        apkPath = SAMPLE_APK_BASE + "GosHelloWorldAppV2.apk",
+    )
+}

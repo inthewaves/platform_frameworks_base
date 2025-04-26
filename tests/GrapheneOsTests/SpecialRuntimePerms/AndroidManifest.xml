@@ -31,7 +31,7 @@
         android:testOnly="true">
         <uses-library android:name="android.test.runner" />
 
-        <activity android:name="grapheneos.srtpermtests.packageinstaller.BaseArchiveTest$Launcher"
+        <activity android:name="grapheneos.srtpermtests.packageinstaller.BaseInstallerTest$Launcher"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -42,7 +42,7 @@
             </intent-filter>
         </activity>
 
-        <receiver android:name="grapheneos.srtpermtests.packageinstaller.BaseArchiveTest$UnarchiveBroadcastReceiver"
+        <receiver android:name="grapheneos.srtpermtests.packageinstaller.BaseInstallerTest$UnarchiveBroadcastReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>

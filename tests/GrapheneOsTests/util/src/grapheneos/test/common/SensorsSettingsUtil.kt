@@ -13,7 +13,7 @@ object SensorsSettingsUtil {
      */
     private const val AUTO_GRANT_SETTING = "auto_grant_OTHER_SENSORS_perm"
 
-    interface ThrowableRunnable {
+    fun interface ThrowableRunnable {
         @Throws(Exception::class)
         fun run()
     }
