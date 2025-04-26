@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import com.android.cts.install.lib.Install
 import com.android.cts.install.lib.InstallUtils
 import com.android.cts.install.lib.TestApp
+import com.android.cts.install.lib.Uninstall
 import com.google.common.truth.Truth
 import grapheneos.test.common.SensorsSettingsUtil
 import org.junit.Assert.assertEquals
@@ -129,10 +130,14 @@ class AutoGrantSensorsSettingsTest : BaseInstallerTest() {
 
                 mInstrumentation.uiAutomation.adoptShellPermissionIdentity()
                 try {
+                    /*
                     installApkByInstallerSession(
                         TestApks.helloWorldV1.packageName, TestApks.helloWorldV2.apkPath,
                         PackageInstaller.STATUS_SUCCESS, null
                     )
+
+                     */
+                    installPackage(TestApks.helloWorldV2.apkPath)
                 } finally {
                     mInstrumentation.uiAutomation.dropShellPermissionIdentity()
                 }
@@ -148,6 +153,120 @@ class AutoGrantSensorsSettingsTest : BaseInstallerTest() {
             }
         } finally {
             uninstallPackage(TestApks.helloWorldV2.packageName)
+        }
+    }
+
+    @Test
+    fun auto_grant_sensors_off_at_install_but_turned_on_before_app_update() {
+        try {
+            SensorsSettingsUtil.withAutoGrantSensorSetting(mInstrumentation, false) {
+                mInstrumentation.uiAutomation.adoptShellPermissionIdentity()
+                try {
+                    installApkByInstallerSession(
+                        TestApks.helloWorldV1.packageName, TestApks.helloWorldV1.apkPath,
+                        PackageInstaller.STATUS_SUCCESS, null
+                    )
+                } finally {
+                    mInstrumentation.uiAutomation.dropShellPermissionIdentity()
+                }
+
+                assertEquals(
+                    "auto grant sensors is off but OTHER_SENSORS granted",
+                    getExpectedPermissionResult(false),
+                    mPackageManager.checkPermission(
+                        Manifest.permission.OTHER_SENSORS,
+                        TestApks.helloWorldV1.packageName
+                    )
+                )
+
+                SensorsSettingsUtil.setAutoGrantSensorsSetting(mInstrumentation, true)
+                withShellPermissionIdentity { Install.single(TestApp.A1).commit() }
+                assertEquals(
+                    "auto grant sensors is on but OTHER_SENSORS not granted after install",
+                    getExpectedPermissionResult(true),
+                    mPackageManager.checkPermission(Manifest.permission.OTHER_SENSORS, TestApp.A)
+                )
+
+                mInstrumentation.uiAutomation.adoptShellPermissionIdentity()
+                try {
+                    installApkByInstallerSession(
+                        TestApks.helloWorldV1.packageName, TestApks.helloWorldV2.apkPath,
+                        PackageInstaller.STATUS_SUCCESS, null
+                    )
+                } finally {
+                    mInstrumentation.uiAutomation.dropShellPermissionIdentity()
+                }
+
+                assertEquals(
+                    "auto grant sensors turned on before updating and OTHER_SENSORS " +
+                            "was granted after update when it was revoked before",
+                    getExpectedPermissionResult(false),
+                    mPackageManager.checkPermission(
+                        Manifest.permission.OTHER_SENSORS,
+                        TestApks.helloWorldV2.packageName
+                    )
+                )
+            }
+        } finally {
+            uninstallPackage(TestApks.helloWorldV2.packageName)
+            withShellPermissionIdentity { Uninstall.packages(TestApp.A) }
+        }
+    }
+
+    @Test
+    fun auto_grant_sensors_on_at_install_but_turned_on_before_app_update() {
+        try {
+            SensorsSettingsUtil.withAutoGrantSensorSetting(mInstrumentation, true) {
+                mInstrumentation.uiAutomation.adoptShellPermissionIdentity()
+                try {
+                    installApkByInstallerSession(
+                        TestApks.helloWorldV1.packageName, TestApks.helloWorldV1.apkPath,
+                        PackageInstaller.STATUS_SUCCESS, null
+                    )
+                } finally {
+                    mInstrumentation.uiAutomation.dropShellPermissionIdentity()
+                }
+
+                assertEquals(
+                    "auto grant sensors is on but OTHER_SENSORS not granted",
+                    getExpectedPermissionResult(true),
+                    mPackageManager.checkPermission(
+                        Manifest.permission.OTHER_SENSORS,
+                        TestApks.helloWorldV1.packageName
+                    )
+                )
+
+                SensorsSettingsUtil.setAutoGrantSensorsSetting(mInstrumentation, false)
+                withShellPermissionIdentity { Install.single(TestApp.A1).commit() }
+                assertEquals(
+                    "auto grant sensors is off but OTHER_SENSORS granted after install",
+                    getExpectedPermissionResult(false),
+                    mPackageManager.checkPermission(Manifest.permission.OTHER_SENSORS, TestApp.A)
+                )
+
+                mInstrumentation.uiAutomation.adoptShellPermissionIdentity()
+                try {
+                    installApkByInstallerSession(
+                        TestApks.helloWorldV1.packageName, TestApks.helloWorldV2.apkPath,
+                        PackageInstaller.STATUS_SUCCESS, null
+                    )
+                } finally {
+                    mInstrumentation.uiAutomation.dropShellPermissionIdentity()
+                }
+
+                assertEquals(
+                    "auto grant sensors turned off before updating and OTHER_SENSORS " +
+                            "was revoked after update when it was granted before",
+                    getExpectedPermissionResult(false),
+                    mPackageManager.checkPermission(
+                        Manifest.permission.OTHER_SENSORS,
+                        TestApks.helloWorldV2.packageName
+                    )
+                )
+            }
+        } finally {
+            uninstallPackage(TestApks.helloWorldV2.packageName)
+            withShellPermissionIdentity { Uninstall.packages(TestApp.A) }
         }
     }
 

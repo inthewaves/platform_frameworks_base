@@ -66,6 +66,7 @@ import androidx.test.uiautomator.Until;
 import com.android.compatibility.common.util.AppOpsUtils;
 import com.android.compatibility.common.util.FeatureUtil;
 import com.android.compatibility.common.util.SystemUtil;
+import com.android.cts.install.lib.InstallUtils;
 import com.android.cts.install.lib.LocalIntentSender;
 
 import org.junit.After;
@@ -83,6 +84,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+
+import grapheneos.test.common.SensorsSettingsUtil;
 
 /**
  * Based on cts/tests/tests/packageinstaller/uninstall/src/android/packageinstaller/uninstall/cts/ArchiveTest.java
@@ -151,6 +154,15 @@ public abstract class BaseInstallerTest {
     }
 
     protected abstract String[] getTestAppPackageNames();
+
+    protected void withShellPermissionIdentity(Runnable runnable) {
+        mInstrumentation.getUiAutomation().adoptShellPermissionIdentity();
+        try {
+            runnable.run();
+        } finally {
+            mInstrumentation.getUiAutomation().dropShellPermissionIdentity();
+        }
+    }
 
     @After
     @CallSuper
@@ -277,6 +289,9 @@ public abstract class BaseInstallerTest {
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL);
         params.setAppPackageName(packageName);
         params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+        // Allow apps to be updated
+        var replaceExistingFlag = 0x00000002;
+        InstallUtils.mutateInstallFlags(params, replaceExistingFlag);
         // params.setAutoInstallDependenciesEnabled(enableAutoInstallDependencies);
 
         final int sessionId = installer.createSession(params);
@@ -344,6 +359,8 @@ public abstract class BaseInstallerTest {
     }
 
     protected void installPackage(@NonNull String path, @NonNull String installerPackageName) {
+        // note: using -g will grant all requested permissions, including OTHER_SENSORS (even
+        // if auto grant OTHER_SENSORS is disabled)
         assertEquals("Success\n", SystemUtil.runShellCommand(
                 String.format("pm install -r -i %s -t -g %s", installerPackageName, path)));
     }
