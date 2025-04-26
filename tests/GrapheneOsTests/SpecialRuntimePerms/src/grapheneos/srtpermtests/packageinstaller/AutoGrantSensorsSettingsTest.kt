@@ -214,7 +214,7 @@ class AutoGrantSensorsSettingsTest : BaseInstallerTest() {
     }
 
     @Test
-    fun auto_grant_sensors_on_at_install_but_turned_on_before_app_update() {
+    fun auto_grant_sensors_on_at_install_but_turned_off_before_app_update() {
         try {
             SensorsSettingsUtil.withAutoGrantSensorSetting(mInstrumentation, true) {
                 mInstrumentation.uiAutomation.adoptShellPermissionIdentity()
@@ -255,9 +255,10 @@ class AutoGrantSensorsSettingsTest : BaseInstallerTest() {
                 }
 
                 assertEquals(
-                    "auto grant sensors turned off before updating and OTHER_SENSORS " +
-                            "was revoked after update when it was granted before",
-                    getExpectedPermissionResult(false),
+                    "auto grant sensors turned off before updating but expected " +
+                            "OTHER_SENSORS to still be granted after update when it was " +
+                            "granted before",
+                    getExpectedPermissionResult(true),
                     mPackageManager.checkPermission(
                         Manifest.permission.OTHER_SENSORS,
                         TestApks.helloWorldV2.packageName
