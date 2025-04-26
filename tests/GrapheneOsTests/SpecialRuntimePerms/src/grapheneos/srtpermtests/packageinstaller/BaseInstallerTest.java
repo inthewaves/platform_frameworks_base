@@ -82,6 +82,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -153,9 +154,10 @@ public abstract class BaseInstallerTest {
         }
     }
 
-    protected abstract String[] getTestAppPackageNames();
+    protected abstract Set<String> getTestAppPackageNames();
 
-    protected void withShellPermissionIdentity(Runnable runnable) {
+    protected void withShellPermissionIdentity(SensorsSettingsUtil.ThrowableRunnable runnable)
+            throws Exception {
         mInstrumentation.getUiAutomation().adoptShellPermissionIdentity();
         try {
             runnable.run();
@@ -280,8 +282,14 @@ public abstract class BaseInstallerTest {
         session.commit(installResultReceiver.getIntentSender(mContext));
     }
 
+    protected void installApkByInstallerSession(final TestApk testApk) throws Exception {
+        withShellPermissionIdentity(() -> {
+            installApkByInstallerSession(testApk.getPackageName(), testApk.getApkPath(),
+                    PackageInstaller.STATUS_SUCCESS, null);
+        });
+    }
 
-    protected void installApkByInstallerSession(final String packageName, final String apk,
+    private void installApkByInstallerSession(final String packageName, final String apk,
             @Nullable final Integer expectedStatus,
             @Nullable final String expectedMsg) throws Exception {
         final PackageInstaller installer = mPackageInstaller;

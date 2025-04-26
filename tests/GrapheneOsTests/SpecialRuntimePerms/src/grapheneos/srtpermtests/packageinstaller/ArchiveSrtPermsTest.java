@@ -37,6 +37,8 @@ import org.junit.runners.Parameterized;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import grapheneos.test.common.SensorsSettingsUtil;
@@ -64,8 +66,8 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
     public boolean mIsSensorGranted;
 
     @Override
-    protected String[] getTestAppPackageNames() {
-        return new String[] { TestApks.archiveApk.getPackageName() };
+    protected Set<String> getTestAppPackageNames() {
+        return Set.of(TestApks.archiveApk.getPackageName(), TestApks.helloWorldV1.getPackageName());
     }
 
     @Test
@@ -152,9 +154,7 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
 
             mInstrumentation.getUiAutomation().adoptShellPermissionIdentity();
             try {
-                installApkByInstallerSession(
-                        TestApks.archiveApk.getPackageName(), TestApks.archiveApk.getApkPath(),
-                        PackageInstaller.STATUS_SUCCESS, null);
+                installApkByInstallerSession(TestApks.archiveApk);
             } finally {
                 mInstrumentation.getUiAutomation().dropShellPermissionIdentity();
             }
