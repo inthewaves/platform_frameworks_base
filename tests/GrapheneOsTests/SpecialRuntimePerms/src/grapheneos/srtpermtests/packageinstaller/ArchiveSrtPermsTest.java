@@ -35,9 +35,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -52,11 +52,19 @@ import grapheneos.test.common.SensorsSettingsUtil;
 @RunWith(Parameterized.class)
 @AppModeFull
 public class ArchiveSrtPermsTest extends BaseInstallerTest {
-    @Parameterized.Parameters(name = "{index}: INTERNET granted={0}, OTHER_SENSORS granted={1}")
+    private static final int NUM_PARAMS = 3;
+
+    @Parameterized.Parameters(name = "{index}: INTERNET granted={0}, OTHER_SENSORS granted={1}, NOTIFICATIONS granted={2}")
     public static Collection<Object[]> data() {
-        return Arrays.asList(new Object[][] {
-                { false, false }, { false, true }, { true, false }, { true, true }
-        });
+        List<Object[]> list = new ArrayList<>();
+        final int numPossibilities = 1 << NUM_PARAMS;
+        for (int currentCode = 0; currentCode < numPossibilities; currentCode++) {
+            final boolean internet = (currentCode & (1)) != 0;
+            final boolean otherSensors = (currentCode & (1 << 1)) != 0;
+            final boolean notifications = (currentCode & (1 << 2)) != 0;
+            list.add(new Object[] {internet, otherSensors, notifications});
+        }
+        return list;
     }
 
     @Parameterized.Parameter
@@ -65,34 +73,33 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
     @Parameterized.Parameter(1)
     public boolean mIsSensorGranted;
 
+    /**
+     * Use POST_NOTIFICATIONS to test that a normal, non-special permission also works
+     */
+    @Parameterized.Parameter(2)
+    public boolean mIsNotificationGranted;
+
     @Override
     protected Set<String> getTestAppPackageNames() {
         return Set.of(TestApks.archiveApk.getPackageName(), TestApks.helloWorldV1.getPackageName());
     }
 
-    @Test
-    @RequiresFlagsEnabled(Flags.FLAG_ARCHIVING)
-    public void unarchiveApp_specialRuntimePermissionsPreserved() throws Exception {
-        final String pkgName = TestApks.archiveApk.getPackageName();
-        final String apkFile = TestApks.archiveApk.getApkPath();
-
-        installPackage(apkFile);
-        try {
-            runWithShellPermissionIdentity(
-                    () -> {
-                        final UserHandle user = UserHandle.of(mContext.getUserId());
-                        if (mIsInternetGranted) {
-                            mPackageManager.grantRuntimePermission(
-                                    pkgName,
-                                    Manifest.permission.INTERNET,
-                                    user);
-                        } else {
-                            mPackageManager.revokeRuntimePermission(
-                                    pkgName,
-                                    Manifest.permission.INTERNET,
-                                    user);
-                        }
-
+    private void grantAndRevokePermissions(final String pkgName, final boolean skipSensors) {
+        runWithShellPermissionIdentity(
+                () -> {
+                    final UserHandle user = UserHandle.of(mContext.getUserId());
+                    if (mIsInternetGranted) {
+                        mPackageManager.grantRuntimePermission(
+                                pkgName,
+                                Manifest.permission.INTERNET,
+                                user);
+                    } else {
+                        mPackageManager.revokeRuntimePermission(
+                                pkgName,
+                                Manifest.permission.INTERNET,
+                                user);
+                    }
+                    if (!skipSensors) {
                         if (mIsSensorGranted) {
                             mPackageManager.grantRuntimePermission(
                                     pkgName,
@@ -104,9 +111,32 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
                                     Manifest.permission.OTHER_SENSORS,
                                     user);
                         }
-                    },
-                    Manifest.permission.GRANT_RUNTIME_PERMISSIONS,
-                    Manifest.permission.REVOKE_RUNTIME_PERMISSIONS);
+                    }
+                    if (mIsNotificationGranted) {
+                        mPackageManager.grantRuntimePermission(
+                                pkgName,
+                                Manifest.permission.POST_NOTIFICATIONS,
+                                user);
+                    } else {
+                        mPackageManager.revokeRuntimePermission(
+                                pkgName,
+                                Manifest.permission.POST_NOTIFICATIONS,
+                                user);
+                    }
+                },
+                Manifest.permission.GRANT_RUNTIME_PERMISSIONS,
+                Manifest.permission.REVOKE_RUNTIME_PERMISSIONS);
+    }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_ARCHIVING)
+    public void unarchiveApp_specialRuntimePermissionsPreserved() throws Exception {
+        final String pkgName = TestApks.archiveApk.getPackageName();
+        final String apkFile = TestApks.archiveApk.getApkPath();
+
+        installPackage(apkFile);
+        try {
+            grantAndRevokePermissions(pkgName, false);
 
             assertEquals(
                "expected INTERNET permission granted state to be " + mIsInternetGranted,
@@ -118,6 +148,11 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
                     getExpectedPermissionResult(mIsSensorGranted),
                     mPackageManager.checkPermission(
                             Manifest.permission.OTHER_SENSORS, pkgName));
+            assertEquals(
+                    "expected POST_NOTIFICATIONS permission granted state to be " + mIsNotificationGranted,
+                    getExpectedPermissionResult(mIsNotificationGranted),
+                    mPackageManager.checkPermission(
+                            Manifest.permission.POST_NOTIFICATIONS, pkgName));
 
             archiveThenMakeUnarchiveRequest(pkgName);
             final int unarchiveId = sUnarchiveId.get(10, TimeUnit.SECONDS);
@@ -138,6 +173,11 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
                     getExpectedPermissionResult(mIsSensorGranted),
                     mPackageManager.checkPermission(
                             Manifest.permission.OTHER_SENSORS, pkgName));
+            assertEquals(
+                    "expected POST_NOTIFICATIONS permission=" + mIsNotificationGranted +  " after unarchive",
+                    getExpectedPermissionResult(mIsNotificationGranted),
+                    mPackageManager.checkPermission(
+                            Manifest.permission.POST_NOTIFICATIONS, pkgName));
         } finally {
             uninstallPackage(pkgName);
         }
@@ -160,23 +200,7 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
             }
 
             try {
-                runWithShellPermissionIdentity(
-                        () -> {
-                            final UserHandle user = UserHandle.of(mContext.getUserId());
-                            if (mIsInternetGranted) {
-                                mPackageManager.grantRuntimePermission(
-                                        TestApks.archiveApk.getPackageName(),
-                                        Manifest.permission.INTERNET,
-                                        user);
-                            } else {
-                                mPackageManager.revokeRuntimePermission(
-                                        TestApks.archiveApk.getPackageName(),
-                                        Manifest.permission.INTERNET,
-                                        user);
-                            }
-                        },
-                        Manifest.permission.GRANT_RUNTIME_PERMISSIONS,
-                        Manifest.permission.REVOKE_RUNTIME_PERMISSIONS);
+                grantAndRevokePermissions(TestApks.archiveApk.getPackageName(), true);
 
                 assertEquals(
                         "expected INTERNET permission granted state to be " + mIsInternetGranted,
@@ -190,6 +214,11 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
                         getExpectedPermissionResult(mIsSensorGranted),
                         mPackageManager.checkPermission(
                                 Manifest.permission.OTHER_SENSORS, TestApks.archiveApk.getPackageName()));
+                assertEquals(
+                        "expected POST_NOTIFICATIONS permission granted state to be " + mIsNotificationGranted,
+                        getExpectedPermissionResult(mIsNotificationGranted),
+                        mPackageManager.checkPermission(
+                                Manifest.permission.POST_NOTIFICATIONS, TestApks.archiveApk.getPackageName()));
 
                 archiveThenMakeUnarchiveRequest(TestApks.archiveApk.getPackageName());
                 final int unarchiveId = sUnarchiveId.get(10, TimeUnit.SECONDS);
@@ -213,6 +242,11 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
                         getExpectedPermissionResult(mIsSensorGranted),
                         mPackageManager.checkPermission(
                                 Manifest.permission.OTHER_SENSORS, TestApks.archiveApk.getPackageName()));
+                assertEquals(
+                        "expected POST_NOTIFICATIONS permission=" + mIsNotificationGranted +  " after unarchive",
+                        getExpectedPermissionResult(mIsNotificationGranted),
+                        mPackageManager.checkPermission(
+                                Manifest.permission.POST_NOTIFICATIONS, TestApks.archiveApk.getPackageName()));
             } finally {
                 uninstallPackage(TestApks.archiveApk.getPackageName());
             }
@@ -224,46 +258,23 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
     public void unarchiveAppWithUpgradeVersion_specialRuntimePermissionsPreserved() throws Exception {
         installPackage(TestApks.helloWorldV1.getApkPath());
 
-        runWithShellPermissionIdentity(
-                () -> {
-                    final UserHandle user = UserHandle.of(mContext.getUserId());
-                    if (mIsInternetGranted) {
-                        mPackageManager.grantRuntimePermission(
-                                TestApks.helloWorldV1.getPackageName(),
-                                Manifest.permission.INTERNET,
-                                user);
-                    } else {
-                        mPackageManager.revokeRuntimePermission(
-                                TestApks.helloWorldV1.getPackageName(),
-                                Manifest.permission.INTERNET,
-                                user);
-                    }
-
-                    if (mIsSensorGranted) {
-                        mPackageManager.grantRuntimePermission(
-                                TestApks.helloWorldV1.getPackageName(),
-                                Manifest.permission.OTHER_SENSORS,
-                                user);
-                    } else {
-                        mPackageManager.revokeRuntimePermission(
-                                TestApks.helloWorldV1.getPackageName(),
-                                Manifest.permission.OTHER_SENSORS,
-                                user);
-                    }
-                },
-                Manifest.permission.GRANT_RUNTIME_PERMISSIONS,
-                Manifest.permission.REVOKE_RUNTIME_PERMISSIONS);
+        grantAndRevokePermissions(TestApks.helloWorldV1.getPackageName(), false);
 
         assertEquals(
-                "expected INTERNET permission=" + mIsInternetGranted +  " after unarchive",
+                "expected INTERNET permission=" + mIsInternetGranted,
                 getExpectedPermissionResult(mIsInternetGranted),
                 mPackageManager.checkPermission(
                         Manifest.permission.INTERNET, TestApks.helloWorldV1.getPackageName()));
         assertEquals(
-                "expected OTHER_SENSORS permission=" + mIsSensorGranted +  " after unarchive",
+                "expected OTHER_SENSORS permission=" + mIsSensorGranted,
                 getExpectedPermissionResult(mIsSensorGranted),
                 mPackageManager.checkPermission(
                         Manifest.permission.OTHER_SENSORS, TestApks.helloWorldV1.getPackageName()));
+        assertEquals(
+                "expected POST_NOTIFICATIONS permission=" + mIsNotificationGranted,
+                getExpectedPermissionResult(mIsNotificationGranted),
+                mPackageManager.checkPermission(
+                        Manifest.permission.POST_NOTIFICATIONS, TestApks.helloWorldV1.getPackageName()));
 
         archiveThenMakeUnarchiveRequest(TestApks.helloWorldV1.getPackageName());
 
@@ -280,15 +291,23 @@ public class ArchiveSrtPermsTest extends BaseInstallerTest {
             assertTrue(isInstalled(TestApks.helloWorldV2.getPackageName()));
 
             assertEquals(
-                    "expected INTERNET permission granted state to be " + mIsInternetGranted,
+                    "expected INTERNET permission granted state to be "
+                            + mIsInternetGranted + " after unarchive",
                     getExpectedPermissionResult(mIsInternetGranted),
                     mPackageManager.checkPermission(
                             Manifest.permission.INTERNET, TestApks.helloWorldV2.getPackageName()));
             assertEquals(
-                    "expected OTHER_SENSORS permission granted state to be " + mIsSensorGranted,
+                    "expected OTHER_SENSORS permission granted state to be "
+                            + mIsSensorGranted + " after unarchive",
                     getExpectedPermissionResult(mIsSensorGranted),
                     mPackageManager.checkPermission(
                             Manifest.permission.OTHER_SENSORS, TestApks.helloWorldV2.getPackageName()));
+            assertEquals(
+                    "expected POST_NOTIFICATIONS permission granted state to be "
+                            + mIsNotificationGranted + " after unarchive",
+                    getExpectedPermissionResult(mIsNotificationGranted),
+                    mPackageManager.checkPermission(
+                            Manifest.permission.POST_NOTIFICATIONS, TestApks.helloWorldV2.getPackageName()));
         } finally {
             // Uninstall the hello world package to avoid unexpected errors
             uninstallPackage(TestApks.helloWorldV2.getPackageName());
