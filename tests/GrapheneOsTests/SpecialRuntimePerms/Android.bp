@@ -22,11 +22,12 @@ android_test {
         // "services.core",
     ],
     resource_dirs: ["res"],
-    srcs: ["src/**/*.java", "src/**/*.kt"],
+    srcs: ["src/**/*.java", "src/**/*.kt", "src/**/*.aidl"],
     data: [
         ":GtsArchiveTestApp",
         ":GosHelloWorldAppV1",
         ":GosHelloWorldAppV2",
+        ":GosAppThatAccessesInternetOnCommand",
     ],
     per_testcase_directory: true,
     platform_apis: true,

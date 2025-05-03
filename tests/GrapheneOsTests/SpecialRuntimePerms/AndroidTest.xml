@@ -75,6 +75,7 @@
         <option name="push" value="GtsArchiveTestApp.apk->/data/local/tmp/cts/uninstall/GtsArchiveTestApp.apk" />
         <option name="push" value="GosHelloWorldAppV1.apk->/data/local/tmp/cts/uninstall/GosHelloWorldAppV1.apk" />
         <option name="push" value="GosHelloWorldAppV2.apk->/data/local/tmp/cts/uninstall/GosHelloWorldAppV2.apk" />
+        <option name="push" value="GosAppThatAccessesInternetOnCommand.apk->/data/local/tmp/cts/uninstall/GosAppThatAccessesInternetOnCommand.apk" />
     </target_preparer>
 
     <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer">

@@ -25,4 +25,10 @@ object TestApks {
         packageName = helloWorldV1.packageName,
         apkPath = SAMPLE_APK_BASE + "GosHelloWorldAppV2.apk",
     )
+
+    @JvmField
+    val appThatAccessesInternet = TestApk(
+        packageName = "grapheneos.test.appthataccessesinternet",
+        apkPath = SAMPLE_APK_BASE + "GosAppThatAccessesInternetOnCommand.apk",
+    )
 }
