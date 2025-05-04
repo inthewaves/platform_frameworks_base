@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.RemoteException
 import android.os.UserHandle
 import android.platform.test.annotations.AppModeFull
 // import android.platform.test.rule.ScreenRecordRule.ScreenRecord
@@ -17,7 +18,12 @@ import androidx.test.uiautomator.UiDevice
 import com.android.compatibility.common.util.SystemUtil
 import grapheneos.srtpermtests.internet.appthataccessesinternet.IAccessInternetOnCommand
 import grapheneos.srtpermtests.packageinstaller.TestApks
+import java.net.UnknownHostException
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import org.junit.After
@@ -129,10 +135,13 @@ class InternetPermissionTest {
 
     @Before
     fun beforeEachTest() {
+        /*
         mInstrumentation.uiAutomation.grantRuntimePermission(
             TestApks.appThatAccessesInternet.packageName,
             Manifest.permission.INTERNET
         )
+
+         */
         SystemUtil.runWithShellPermissionIdentity(
             {
                 val user = UserHandle.of(mContext.userId)
@@ -171,17 +180,13 @@ class InternetPermissionTest {
 
     @Test
     fun internet_granted_resolve_name_successful() {
-        SystemUtil.runWithShellPermissionIdentity(
-            {
-                val user = UserHandle.of(mContext.userId)
-                mPackageManager.grantRuntimePermission(
-                    TestApks.appThatAccessesInternet.packageName,
-                    Manifest.permission.INTERNET,
-                    user
-                )
-            },
-            Manifest.permission.GRANT_RUNTIME_PERMISSIONS,
+        /*
+        mInstrumentation.uiAutomation.grantRuntimePermission(
+            TestApks.appThatAccessesInternet.packageName,
+            Manifest.permission.INTERNET
         )
+
+         */
 
         assertEquals(
             PackageManager.PERMISSION_GRANTED,
@@ -192,10 +197,13 @@ class InternetPermissionTest {
             "expected INTERNET to be granted"
         )
 
-        eventually {
-            assertNotNull(accessor)
-            accessor!!.accessInternet()
-        }
+        unbindService()
+        // Rebind because revoking runtime permissions will stop the app
+        bindService()
+
+        eventually { assertNotNull(accessor) }
+
+        accessor!!.accessInternet()
     }
 
     @Test
@@ -208,9 +216,13 @@ class InternetPermissionTest {
         // Rebind because revoking runtime permissions will stop the app
         bindService()
 
-        eventually {
-            assertNotNull(accessor)
-            accessor!!.accessInternet()
-        }
+        eventually { assertNotNull(accessor) }
+        val accessor = accessor!!
+        val exception = assertFailsWith<SecurityException> { accessor.accessInternet() }
+        val msg = assertNotNull(exception.message)
+        assertContains(
+            msg,
+            "java.net.UnknownHostException: Unable to resolve host"
+        )
     }
 }

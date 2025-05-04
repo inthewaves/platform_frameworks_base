@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.RemoteException;
 import java.net.InetAddress;
 
 public class AccessInternetOnCommand extends Service {

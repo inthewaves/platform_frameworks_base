@@ -8,6 +8,7 @@ android_test_helper_app {
     min_sdk_version: "30",
     srcs: [
         "src/**/*.java",
-        "src/**/*.aidl"
+        "src/**/*.aidl",
+        "src/**/*.kt",
     ],
 }
