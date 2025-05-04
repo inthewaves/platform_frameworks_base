@@ -1,4 +1,4 @@
-package grapheneos.srtpermtests.internet.appthataccessesinternet;
+package app.srtpermtests.internet.appthataccessesinternet;
 
 interface IAccessInternetOnCommand {
     /** Access internet on command */
