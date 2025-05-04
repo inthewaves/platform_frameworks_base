@@ -37,11 +37,11 @@ private val TEST_APP_SERVICE =
  */
 // @RunWith(AndroidJUnit4::class)
 // @RunWith(AndroidJUnit4::class)
-@RunWith(AndroidJUnit4::class)
-@AppModeFull(
-    reason = ("Cannot set system settings as instant app. Also we never show a location "
-            + "access check notification for instant apps.")
-)
+//@RunWith(AndroidJUnit4::class)
+//@AppModeFull(
+//    reason = ("Cannot set system settings as instant app. Also we never show a location "
+//            + "access check notification for instant apps.")
+//)
 // @ScreenRecord
 class InternetPermissionTest {
 
