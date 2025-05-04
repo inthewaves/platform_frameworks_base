@@ -21,7 +21,6 @@ android_test {
         "kotlin-test",
         "grapheneos-test-common",
         "androidx.test.rules",
-        "permission-test-util-lib",
         "platform-test-rules",
         "CtsVirtualDeviceCommonLib",
         // TODO: Figure out how to use cts/tests/tests/content/src/android/content/pm/cts/PackageManagerShellCommandInstallTest.java
