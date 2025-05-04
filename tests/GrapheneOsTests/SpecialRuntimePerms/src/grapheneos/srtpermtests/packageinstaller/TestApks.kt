@@ -28,7 +28,7 @@ object TestApks {
 
     @JvmField
     val appThatAccessesInternet = TestApk(
-        packageName = "app.srtpermtests.internet.appthataccessesinternet",
+        packageName = "grapheneos.srtpermtests.internet.appthataccessesinternet",
         apkPath = SAMPLE_APK_BASE + "GosAppThatAccessesInternetOnCommand.apk",
     )
 

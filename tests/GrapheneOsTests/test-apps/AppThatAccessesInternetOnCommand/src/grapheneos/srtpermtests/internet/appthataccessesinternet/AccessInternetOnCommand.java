@@ -1,4 +1,4 @@
-package app.srtpermtests.internet.appthataccessesinternet;
+package grapheneos.srtpermtests.internet.appthataccessesinternet;
 
 import android.app.Service;
 import android.content.Intent;

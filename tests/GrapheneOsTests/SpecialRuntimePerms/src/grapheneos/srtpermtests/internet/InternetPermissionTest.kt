@@ -15,7 +15,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.AndroidJUnit4
 import androidx.test.uiautomator.UiDevice
 import com.android.compatibility.common.util.SystemUtil
-import app.srtpermtests.internet.appthataccessesinternet.IAccessInternetOnCommand
+import grapheneos.srtpermtests.internet.appthataccessesinternet.IAccessInternetOnCommand
 import grapheneos.srtpermtests.packageinstaller.TestApks
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
