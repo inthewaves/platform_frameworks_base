@@ -21,14 +21,18 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <uses-permission android:name="android.permission.CREATE_VIRTUAL_DEVICE"/>
+
+    <uses-permission android:name="android.permission.INJECT_EVENTS"/>
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
+
     <queries>
         <package android:name="android.packageinstaller.archive.cts.archiveapp" />
         <package android:name="com.example.helloworld" />
     </queries>
 
     <application
-        android:label="GrapheneOS special runtime permissions tests"
-        android:testOnly="true">
+        android:label="GrapheneOS special runtime permissions tests">
         <uses-library android:name="android.test.runner" />
 
         <activity android:name="grapheneos.srtpermtests.packageinstaller.BaseInstallerTest$Launcher"
@@ -52,7 +56,6 @@
     </application>
 
     <instrumentation android:name="androidx.test.runner.AndroidJUnitRunner"
-                     android:functionalTest="true"
                      android:targetPackage="grapheneos.srtpermtests"
                      android:label="SrtPerms Tests"/>
 

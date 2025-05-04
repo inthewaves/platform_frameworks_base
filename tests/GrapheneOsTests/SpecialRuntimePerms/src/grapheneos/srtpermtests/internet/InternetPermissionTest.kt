@@ -9,11 +9,14 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
 import android.os.UserHandle
+import android.platform.test.annotations.AppModeFull
+// import android.platform.test.rule.ScreenRecordRule.ScreenRecord
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.AndroidJUnit4
 import androidx.test.uiautomator.UiDevice
 import com.android.compatibility.common.util.SystemUtil
+import grapheneos.srtpermtests.internet.appthataccessesinternet.IAccessInternetOnCommand
 import grapheneos.srtpermtests.packageinstaller.TestApks
-import grapheneos.test.appthataccessesinternet.IAccessInternetOnCommand
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -23,6 +26,7 @@ import org.junit.Assert
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
+import org.junit.runner.RunWith
 
 private val TEST_APP_SERVICE =
     TestApks.appThatAccessesInternet.packageName + ".AccessInternetOnCommand"
@@ -33,6 +37,12 @@ private val TEST_APP_SERVICE =
  */
 // @RunWith(AndroidJUnit4::class)
 // @RunWith(AndroidJUnit4::class)
+@RunWith(AndroidJUnit4::class)
+@AppModeFull(
+    reason = ("Cannot set system settings as instant app. Also we never show a location "
+            + "access check notification for instant apps.")
+)
+// @ScreenRecord
 class InternetPermissionTest {
 
     val mInstrumentation: Instrumentation = InstrumentationRegistry.getInstrumentation()

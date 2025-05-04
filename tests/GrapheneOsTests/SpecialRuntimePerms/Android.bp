@@ -1,6 +1,9 @@
 android_test {
     name: "SpecialRuntimePermsTestCases",
-    defaults: ["cts_defaults"],
+    defaults: [
+        "cts_defaults",
+        "mts-target-sdk-version-current",
+    ],
     libs: [
         "android.test.runner.stubs.system",
         "android.test.base.stubs.system",
@@ -17,17 +20,31 @@ android_test {
         "ShortcutManagerTestUtils",
         "kotlin-test",
         "grapheneos-test-common",
+        "androidx.test.rules",
+        "permission-test-util-lib",
+        "platform-test-rules",
+        "CtsVirtualDeviceCommonLib",
         // TODO: Figure out how to use cts/tests/tests/content/src/android/content/pm/cts/PackageManagerShellCommandInstallTest.java
         // IIntentSender...
         // "services.core",
     ],
     resource_dirs: ["res"],
-    srcs: ["src/**/*.java", "src/**/*.kt", "src/**/*.aidl"],
+    srcs: [
+        "src/**/*.java",
+        "src/**/*.aidl",
+        "src/**/*.kt",
+    ],
     data: [
         ":GtsArchiveTestApp",
         ":GosHelloWorldAppV1",
         ":GosHelloWorldAppV2",
         ":GosAppThatAccessesInternetOnCommand",
+    ],
+    test_suites: [
+        "cts",
+        "general-tests",
+        "sts",
+        "mts-permission",
     ],
     per_testcase_directory: true,
     platform_apis: true,

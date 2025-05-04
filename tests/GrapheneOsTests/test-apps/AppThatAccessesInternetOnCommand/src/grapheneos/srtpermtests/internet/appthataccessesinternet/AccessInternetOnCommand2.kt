@@ -1,4 +1,4 @@
-package grapheneos.test.appthataccessesinternet
+package grapheneos.srtpermtests.internet.appthataccessesinternet
 
 import android.app.Service
 import android.content.Intent
@@ -7,7 +7,7 @@ import android.os.IBinder
 import android.os.Looper
 import java.net.InetAddress
 
-class AccessInternetOnCommand : Service() {
+class AccessInternetOnCommand2 : Service() {
     private val mBinder: IAccessInternetOnCommand.Stub = object : Stub() {
         fun accessInternet() {
             InetAddress.getByName("grapheneos.org")
