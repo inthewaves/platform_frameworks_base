@@ -4,12 +4,6 @@ android_test_helper_app {
         "cts_defaults",
         "mts-target-sdk-version-current",
     ],
-    test_suites: [
-        "cts",
-        "general-tests",
-        "sts",
-        "mts-permission",
-    ],
     sdk_version: "current",
     min_sdk_version: "30",
     srcs: [

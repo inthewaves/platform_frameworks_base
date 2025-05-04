@@ -40,12 +40,6 @@ android_test {
         ":GosHelloWorldAppV2",
         ":GosAppThatAccessesInternetOnCommand",
     ],
-    test_suites: [
-        "cts",
-        "general-tests",
-        "sts",
-        "mts-permission",
-    ],
     per_testcase_directory: true,
     platform_apis: true,
     sdk_version: "test_current",
