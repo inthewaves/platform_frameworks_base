@@ -20,9 +20,6 @@ android_test {
         "ShortcutManagerTestUtils",
         "kotlin-test",
         "grapheneos-test-common",
-        "androidx.test.rules",
-        "platform-test-rules",
-        "CtsVirtualDeviceCommonLib",
         // TODO: Figure out how to use cts/tests/tests/content/src/android/content/pm/cts/PackageManagerShellCommandInstallTest.java
         // IIntentSender...
         // "services.core",
