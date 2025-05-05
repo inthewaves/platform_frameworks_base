@@ -68,26 +68,6 @@ public class AccessInternetOnCommand extends Service {
     };
 
     @Override
-    public void onCreate() {
-        super.onCreate();
-        Log.d(TAG, "onCreate, pid " + Process.myPid());
-
-        /*
-        var channelName = "Foreground service notification";
-        var chan = new NotificationChannel(NOTIF_CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_HIGH);
-        var service = getSystemService(NotificationManager.class);
-        service.createNotificationChannel(chan);
-
-        var notification = new Notification.Builder(this, NOTIF_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_secure)
-                .build();
-        // If not started as foreground service, sensors will not update at all
-        startForeground(1, notification);
-
-         */
-    }
-
-    @Override
     public IBinder onBind(Intent intent) {
         return mBinder;
     }

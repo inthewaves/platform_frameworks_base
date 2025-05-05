@@ -14,7 +14,6 @@ import android.hardware.SensorManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.IBinder
-import android.os.UserHandle
 import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.AndroidJUnit4
@@ -135,7 +134,8 @@ class InternetAndSensorsPermissionTest {
                 mContext.bindService(
                     intent,
                     serviceConn!!,
-                    Context.BIND_AUTO_CREATE or Context.BIND_NOT_FOREGROUND
+                    // adding Context.BIND_NOT_FOREGROUND will make sensors tests fail
+                    Context.BIND_AUTO_CREATE
                 )
             }
         }
@@ -185,7 +185,7 @@ class InternetAndSensorsPermissionTest {
     fun internet_granted_connectivity_manager_methods_show_connected() = runTest {
         val acc = bindService()
         val isConnected = acc.isConnected()
-        assert(isConnected)
+        assertTrue(isConnected)
     }
 
     @Test
@@ -243,8 +243,7 @@ class InternetAndSensorsPermissionTest {
     @Test
     fun sensors_granted_get_success() = runTest {
         val acc = bindService()
-        val sensorInfoPresent: Boolean = acc.getSensorInfo(8_000)
-        Log.d("InternetAndSensorsPermissionTest", "sensorInfoPresent=$sensorInfoPresent")
+        val sensorInfoPresent: Boolean = acc.getSensorInfo(4_000)
         assertTrue(sensorInfoPresent)
     }
 
