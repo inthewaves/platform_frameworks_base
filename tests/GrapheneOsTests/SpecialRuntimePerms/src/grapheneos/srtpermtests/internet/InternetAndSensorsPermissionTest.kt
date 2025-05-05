@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.IBinder
 import android.os.UserHandle
 import androidx.test.platform.app.InstrumentationRegistry
@@ -15,6 +17,8 @@ import androidx.test.uiautomator.UiDevice
 import com.android.compatibility.common.util.SystemUtil
 import grapheneos.srtpermtests.internet.appthataccessesinternet.IAccessInternetOnCommand
 import grapheneos.srtpermtests.packageinstaller.TestApks
+import java.net.InetAddress
+import java.net.UnknownHostException
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -24,26 +28,27 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.AfterClass
-import org.junit.Assert
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
 import org.junit.runner.RunWith
 
+
+private val TEST_APP_PKG = TestApks.appThatAccessesInternet.packageName
 private val TEST_APP_SERVICE =
-    TestApks.appThatAccessesInternet.packageName + ".AccessInternetOnCommand"
+    TEST_APP_PKG + ".AccessInternetOnCommand"
 
 /**
  * Based on
  * packages/modules/Permission/tests/cts/permission/src/android/permission/cts/LocationAccessCheckTest.java
  */
 @RunWith(AndroidJUnit4::class)
-class InternetPermissionTest {
+class InternetAndSensorsPermissionTest {
 
     val mInstrumentation: Instrumentation = InstrumentationRegistry.getInstrumentation()
-
-    val mPackageManager = mContext.packageManager
-    val uiDevice = UiDevice.getInstance(mInstrumentation)
+    val mPackageManager: PackageManager = mContext.packageManager
+    val uiDevice: UiDevice = UiDevice.getInstance(mInstrumentation)
 
     companion object {
         @JvmField
@@ -57,6 +62,7 @@ class InternetPermissionTest {
         @JvmStatic
         fun beforeClass() {
             installBackgroundAccessApp()
+            // Required to allow test app to do internet calls in background service
             setIdleAllowlist(true)
         }
 
@@ -64,11 +70,7 @@ class InternetPermissionTest {
         @JvmStatic
         fun afterClass() {
             setIdleAllowlist(false)
-            val output = SystemUtil.runShellCommandOrThrow(
-                "pm uninstall " + TestApks.appThatAccessesInternet.packageName
-            )
-            assertTrue(output.contains("Success"))
-
+            uninstallBackgroundAccessApp()
             unbindService()
         }
 
@@ -77,9 +79,15 @@ class InternetPermissionTest {
                 // -g means grant all runtime permissions
                 "pm install -r -g " + TestApks.appThatAccessesInternet.apkPath
             )
-            Assert.assertTrue(output.contains("Success"))
+            assertTrue(output.contains("Success"))
         }
 
+        private fun uninstallBackgroundAccessApp() {
+            val output = SystemUtil.runShellCommandOrThrow(
+                "pm uninstall $TEST_APP_PKG"
+            )
+            assertTrue(output.contains("Success"))
+        }
 
         private fun wakeUpAndDismissKeyguard() {
             SystemUtil.runShellCommand("input keyevent KEYCODE_WAKEUP")
@@ -88,7 +96,7 @@ class InternetPermissionTest {
 
         private fun setIdleAllowlist(enabled: Boolean) {
             val prefix = if (enabled) "+" else "-"
-            val command = "cmd deviceidle whitelist $prefix${TestApks.appThatAccessesInternet.packageName}"
+            val command = "cmd deviceidle whitelist $prefix${TEST_APP_PKG}"
             SystemUtil.runShellCommand(command)
         }
 
@@ -110,13 +118,11 @@ class InternetPermissionTest {
                     override fun onServiceDisconnected(name: ComponentName?) {
                         serviceConn = null
                         accessor = null
+                        cont.cancel()
                     }
                 }
                 val intent = Intent()
-                intent.component = ComponentName(
-                    TestApks.appThatAccessesInternet.packageName,
-                    TEST_APP_SERVICE
-                )
+                intent.component = ComponentName(TEST_APP_PKG, TEST_APP_SERVICE)
                 mContext.bindService(
                     intent,
                     serviceConn!!,
@@ -136,16 +142,13 @@ class InternetPermissionTest {
 
     @Before
     fun beforeEachTest() {
-        SystemUtil.runWithShellPermissionIdentity(
-            {
-                val user = UserHandle.of(mContext.userId)
-                mPackageManager.grantRuntimePermission(
-                    TestApks.appThatAccessesInternet.packageName,
-                    Manifest.permission.INTERNET,
-                    user
-                )
-            },
-            Manifest.permission.GRANT_RUNTIME_PERMISSIONS,
+        mInstrumentation.uiAutomation.grantRuntimePermission(
+            TEST_APP_PKG,
+            Manifest.permission.INTERNET
+        )
+        mInstrumentation.uiAutomation.grantRuntimePermission(
+            TEST_APP_PKG,
+            Manifest.permission.OTHER_SENSORS
         )
         wakeUpAndDismissKeyguard()
     }
@@ -161,7 +164,7 @@ class InternetPermissionTest {
             PackageManager.PERMISSION_GRANTED,
             mPackageManager.checkPermission(
                 Manifest.permission.INTERNET,
-                TestApks.appThatAccessesInternet.packageName
+                TEST_APP_PKG
             ),
             "expected INTERNET to be granted"
         )
@@ -178,8 +181,20 @@ class InternetPermissionTest {
 
     @Test
     fun internet_revoked_resolve_name_throws_exception_like_no_internet() = runTest {
+        assumeTrue(
+            "network should be available",
+            try {
+                InetAddress.getByName("grapheneos.org")
+                true
+            } catch (e: UnknownHostException) {
+                false
+            } catch (e: SecurityException) {
+                false
+            }
+        )
+
         mInstrumentation.uiAutomation.revokeRuntimePermission(
-            TestApks.appThatAccessesInternet.packageName,
+            TEST_APP_PKG,
             Manifest.permission.INTERNET
         )
 
@@ -199,8 +214,15 @@ class InternetPermissionTest {
 
     @Test
     fun internet_revoked_connectivity_manager_methods_show_not_connected() = runTest {
+        val cm = mContext.getSystemService(ConnectivityManager::class.java)
+        val network = cm.activeNetwork
+        assumeTrue(network != null)
+        val caps = cm.getNetworkCapabilities(network)
+        assumeTrue(caps != null)
+        assumeTrue(caps!!.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+
         mInstrumentation.uiAutomation.revokeRuntimePermission(
-            TestApks.appThatAccessesInternet.packageName,
+            TEST_APP_PKG,
             Manifest.permission.INTERNET
         )
 
