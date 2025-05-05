@@ -1,5 +1,6 @@
 package grapheneos.srtpermtests.internet
 
+// import android.platform.test.rule.ScreenRecordRule.ScreenRecord
 import android.Manifest
 import android.app.Instrumentation
 import android.content.ComponentName
@@ -7,23 +8,17 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
 import android.os.IBinder
-import android.os.RemoteException
 import android.os.UserHandle
-import android.platform.test.annotations.AppModeFull
-// import android.platform.test.rule.ScreenRecordRule.ScreenRecord
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.runner.AndroidJUnit4
 import androidx.test.uiautomator.UiDevice
 import com.android.compatibility.common.util.SystemUtil
 import grapheneos.srtpermtests.internet.appthataccessesinternet.IAccessInternetOnCommand
 import grapheneos.srtpermtests.packageinstaller.TestApks
-import java.net.UnknownHostException
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
-import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import org.junit.After
@@ -32,7 +27,7 @@ import org.junit.Assert
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
-import org.junit.runner.RunWith
+
 
 private val TEST_APP_SERVICE =
     TestApks.appThatAccessesInternet.packageName + ".AccessInternetOnCommand"
@@ -68,6 +63,7 @@ class InternetPermissionTest {
         @JvmStatic
         fun beforeClass() {
             installBackgroundAccessApp()
+            setIdleAllowlist(TestApks.appThatAccessesInternet.packageName, true)
         }
 
         @AfterClass
@@ -97,6 +93,12 @@ class InternetPermissionTest {
             SystemUtil.runShellCommand("wm dismiss-keyguard")
         }
 
+        private fun setIdleAllowlist(packageName: String, enabled: Boolean) {
+            val prefix = if (enabled) "+" else "-"
+            val command = "cmd deviceidle whitelist $prefix$packageName"
+            SystemUtil.runShellCommand(command)
+        }
+
         private fun bindService() {
             if (serviceConn != null && accessor != null) {
                 return
@@ -120,7 +122,7 @@ class InternetPermissionTest {
             mContext.bindService(
                 intent,
                 serviceConn!!,
-                Context.BIND_AUTO_CREATE or Context.BIND_NOT_FOREGROUND
+                Context.BIND_AUTO_CREATE or Context.BIND_NOT_FOREGROUND or Context.BIND_ALLOW_ACTIVITY_STARTS
             )
         }
 
@@ -154,7 +156,7 @@ class InternetPermissionTest {
             Manifest.permission.GRANT_RUNTIME_PERMISSIONS,
         )
         wakeUpAndDismissKeyguard()
-        bindService()
+        // bindService()
     }
 
     @After
@@ -179,6 +181,21 @@ class InternetPermissionTest {
     }
 
     @Test
+    fun self_test() {
+        java.net.InetAddress.getByName("grapheneos.org")
+
+        val connectivityManager: ConnectivityManager = mContext
+            .getSystemService(ConnectivityManager::class.java)
+        val network = connectivityManager.activeNetwork
+        assertNotNull(network)
+    }
+
+    private fun startActivity(packageName: String, className: String) =
+        // The -W option waits for the activity launch to complete
+        SystemUtil.runShellCommandOrThrow(
+            "am start-activity --user 0 -W -n $packageName/$className")
+
+    @Test
     fun internet_granted_resolve_name_successful() {
         /*
         mInstrumentation.uiAutomation.grantRuntimePermission(
@@ -187,6 +204,8 @@ class InternetPermissionTest {
         )
 
          */
+
+
 
         assertEquals(
             PackageManager.PERMISSION_GRANTED,
@@ -197,13 +216,23 @@ class InternetPermissionTest {
             "expected INTERNET to be granted"
         )
 
+        //startActivity(TestApks.appThatAccessesInternet.packageName, ".MainActivity")
+        //Thread.sleep(3000)
+
         unbindService()
         // Rebind because revoking runtime permissions will stop the app
         bindService()
+        eventually {
+            assertNotNull(accessor)
+            accessor!!.accessInternet()
+        }
 
-        eventually { assertNotNull(accessor) }
-
-        accessor!!.accessInternet()
+        try {
+            accessor!!.accessInternet()
+        } catch (e: SecurityException) {
+            Thread.sleep(10_000)
+            throw e
+        }
     }
 
     @Test
