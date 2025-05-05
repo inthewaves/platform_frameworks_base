@@ -47,6 +47,8 @@ private val TEST_APP_PKG = TestApks.appThatAccessesInternet.packageName
 private val TEST_APP_SERVICE =
     TEST_APP_PKG + ".AccessInternetOnCommand"
 
+private const val SENSORS_TEST_TIMEOUT_MILLIS = 4_000L
+
 /**
  * Based on
  * packages/modules/Permission/tests/cts/permission/src/android/permission/cts/LocationAccessCheckTest.java
@@ -70,14 +72,17 @@ class InternetAndSensorsPermissionTest {
         @JvmStatic
         fun beforeClass() {
             installBackgroundAccessApp()
-            // Required to allow test app to do internet calls in background service
-            setIdleAllowlist(true)
+            // Might be needed to allow test app to do internet calls in Service.
+            // Note: Commenting this out alone seems to result in all tests still passing.
+            // Removing this and adding Context.BIND_NOT_FOREGROUND to the service binding,
+            // will cause some of the internet granted tests to fail.
+            // setIdleAllowlist(true)
         }
 
         @AfterClass
         @JvmStatic
         fun afterClass() {
-            setIdleAllowlist(false)
+            //setIdleAllowlist(false)
             uninstallBackgroundAccessApp()
             unbindService()
         }
@@ -104,7 +109,7 @@ class InternetAndSensorsPermissionTest {
 
         private fun setIdleAllowlist(enabled: Boolean) {
             val prefix = if (enabled) "+" else "-"
-            val command = "cmd deviceidle whitelist $prefix${TEST_APP_PKG}"
+            val command = "cmd deviceidle whitelist $prefix$TEST_APP_PKG"
             SystemUtil.runShellCommand(command)
         }
 
@@ -134,7 +139,8 @@ class InternetAndSensorsPermissionTest {
                 mContext.bindService(
                     intent,
                     serviceConn!!,
-                    // adding Context.BIND_NOT_FOREGROUND will make sensors tests fail
+                    // adding Context.BIND_NOT_FOREGROUND will make test app service unable to
+                    // get sensor readings
                     Context.BIND_AUTO_CREATE
                 )
             }
@@ -243,7 +249,7 @@ class InternetAndSensorsPermissionTest {
     @Test
     fun sensors_granted_get_success() = runTest {
         val acc = bindService()
-        val sensorInfoPresent: Boolean = acc.getSensorInfo(4_000)
+        val sensorInfoPresent: Boolean = acc.getSensorInfo(SENSORS_TEST_TIMEOUT_MILLIS)
         assertTrue(sensorInfoPresent)
     }
 
@@ -255,49 +261,7 @@ class InternetAndSensorsPermissionTest {
         )
 
         val acc = bindService()
-        val sensorInfoPresent = acc.getSensorInfo(4_000)
+        val sensorInfoPresent = acc.getSensorInfo(SENSORS_TEST_TIMEOUT_MILLIS)
         assertFalse(sensorInfoPresent)
-    }
-
-    @Test
-    fun sensors_self_test() {
-        val sm = mContext.getSystemService(SensorManager::class.java)
-        val sensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        assertNotNull(sensor)
-
-        //val sensorEvent = SensorUtil.getSensorEvent(sm, sensor)
-        //assertNotNull(sensorEvent)
-        //assertTrue(sensorEvent.values.isNotEmpty())
-    }
-}
-
-object SensorUtil {
-    private const val TAG = "SensorUtil"
-
-    fun getSensorEvent(sensorManager: SensorManager, sensor: Sensor): SensorEvent? {
-        return runBlocking {
-            withTimeout(20_000L) {
-                suspendCancellableCoroutine { cont ->
-                    val sensorEventListener = object : SensorEventListener {
-                        override fun onSensorChanged(event: SensorEvent?) {
-                            Log.d(TAG, "onSensorChanged: ${event?.values?.asList()}")
-                            cont.resume(event)
-                        }
-
-                        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-                    }
-                    sensorManager.registerListener(
-                        sensorEventListener,
-                        sensor,
-                        SensorManager.SENSOR_DELAY_NORMAL
-                    )
-                    Log.d(TAG, "registered sensor listener")
-                    cont.invokeOnCancellation {
-                        Log.d(TAG, "unregistered sensor listener")
-                        sensorManager.unregisterListener(sensorEventListener)
-                    }
-                }
-            }
-        }
     }
 }

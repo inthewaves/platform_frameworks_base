@@ -1,15 +1,8 @@
 package grapheneos.srtpermtests.internet.appthataccessesinternet;
 
 import android.Manifest;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.app.Service;
-import android.content.ComponentName;
-import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
-import android.content.pm.ServiceInfo;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.net.ConnectivityManager;
@@ -19,7 +12,6 @@ import android.os.Process;
 import android.util.Log;
 
 import java.net.InetAddress;
-import java.util.List;
 
 public class AccessInternetOnCommand extends Service {
     private static final String NOTIF_CHANNEL_ID = "AccessInternetOnCommand_channel1";
