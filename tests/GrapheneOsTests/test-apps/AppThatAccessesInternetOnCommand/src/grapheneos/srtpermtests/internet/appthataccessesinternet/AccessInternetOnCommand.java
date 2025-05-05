@@ -2,28 +2,17 @@ package grapheneos.srtpermtests.internet.appthataccessesinternet;
 
 import android.Manifest;
 import android.app.Service;
-import android.app.job.JobInfo;
-import android.app.job.JobScheduler;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.content.pm.PackageManager;
-import android.net.ConnectivityManager;
-import android.net.Network;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.RemoteException;
 import android.util.Log;
 
-import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.net.InetAddress;
-import java.net.URL;
-import java.net.URLConnection;
-
-import javax.net.ssl.HttpsURLConnection;
 
 public class AccessInternetOnCommand extends Service {
     private static final String TAG = AccessInternetOnCommand.class.getSimpleName();
@@ -48,7 +37,7 @@ public class AccessInternetOnCommand extends Service {
 
              */
 
-
+            /*
             var intent = new Intent(AccessInternetOnCommand.this, InternetJobService.class);
             var bindResult = bindService(
                     intent,
@@ -68,14 +57,9 @@ public class AccessInternetOnCommand extends Service {
 
             Log.d(TAG, "bind result=" + bindResult);
 
+             */
 
-            AccessInternetOnCommand.this.startForegroundService(intent);
-
-            try {
-                Thread.sleep(10_000);
-            } catch (InterruptedException e) {
-                throw new SecurityException(e);
-            }
+            // AccessInternetOnCommand.this.startForegroundService(intent);
 
             try {
                 InetAddress.getByName("grapheneos.org");

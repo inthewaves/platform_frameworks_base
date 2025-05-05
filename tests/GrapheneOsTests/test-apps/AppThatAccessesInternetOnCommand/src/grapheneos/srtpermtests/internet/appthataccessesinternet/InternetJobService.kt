@@ -17,6 +17,10 @@ import java.io.IOException
 
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 private const val TAG = "InternetJobService"
 private const val NOTIF_CHANNEL_ID = "channel1"
@@ -24,8 +28,15 @@ private const val NOTIF_CHANNEL_ID = "channel1"
 
 class InternetJobService : Service() {
 
+    private val scope = CoroutineScope(Dispatchers.IO)
+
+    override fun onDestroy() {
+        super.onDestroy()
+        scope.cancel("Service destroyed")
+    }
+
     private fun createNotificationChannel() {
-        val channelName = "My Background Service"
+        val channelName = "Foreground service notification"
         val chan = NotificationChannel(NOTIF_CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_HIGH)
         //chan.lightColor = Color.BLUE
         //chan.importance = NotificationManager.IMPORTANCE_NONE
@@ -38,7 +49,17 @@ class InternetJobService : Service() {
         super.onCreate()
 
         Log.d(TAG, "service created: " + this + " in " + Process.myPid());
-        onStartJob(null)
+
+        createNotificationChannel()
+        val notification = Notification.Builder(this, NOTIF_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_secure)
+            .build()
+        // startForeground(1, notification)
+
+
+        scope.launch {
+            // onStartJob(null)
+        }
     }
 
 

@@ -122,7 +122,7 @@ class InternetPermissionTest {
             mContext.bindService(
                 intent,
                 serviceConn!!,
-                Context.BIND_AUTO_CREATE or Context.BIND_NOT_FOREGROUND or Context.BIND_ALLOW_ACTIVITY_STARTS
+                Context.BIND_AUTO_CREATE or Context.BIND_NOT_FOREGROUND
             )
         }
 
