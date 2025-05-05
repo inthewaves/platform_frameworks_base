@@ -263,5 +263,6 @@ class InternetAndSensorsPermissionTest {
         val acc = bindService()
         val sensorInfoPresent = acc.getSensorInfo(SENSORS_TEST_TIMEOUT_MILLIS)
         assertFalse(sensorInfoPresent)
+        // TODO: add CtsNotificationListener to listen for the sensors access notification...
     }
 }
