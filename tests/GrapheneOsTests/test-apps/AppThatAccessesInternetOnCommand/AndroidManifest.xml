@@ -6,12 +6,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
 
     <application android:label="GosInternetAccess" android:debuggable="true">
         <service android:name=".AccessInternetOnCommand"
-            android:foregroundServiceType="dataSync"
             android:exported="true" />
     </application>
 </manifest>

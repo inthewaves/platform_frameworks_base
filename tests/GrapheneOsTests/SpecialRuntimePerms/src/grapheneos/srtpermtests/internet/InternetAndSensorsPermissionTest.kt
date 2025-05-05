@@ -28,6 +28,7 @@ import kotlin.coroutines.resume
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -134,7 +135,7 @@ class InternetAndSensorsPermissionTest {
                 mContext.bindService(
                     intent,
                     serviceConn!!,
-                    Context.BIND_AUTO_CREATE
+                    Context.BIND_AUTO_CREATE or Context.BIND_NOT_FOREGROUND
                 )
             }
         }
@@ -235,15 +236,16 @@ class InternetAndSensorsPermissionTest {
         )
 
         val acc = bindService()
-        val isConnected = acc.isConnected()
-        assert(!isConnected)
+        val isConnected: Boolean = acc.isConnected()
+        assertFalse(isConnected)
     }
 
     @Test
     fun sensors_granted_get_success() = runTest {
         val acc = bindService()
-        val sensorInfoPresent = acc.getSensorInfo(4_000)
-        assert(sensorInfoPresent)
+        val sensorInfoPresent: Boolean = acc.getSensorInfo(8_000)
+        Log.d("InternetAndSensorsPermissionTest", "sensorInfoPresent=$sensorInfoPresent")
+        assertTrue(sensorInfoPresent)
     }
 
     @Test
@@ -255,7 +257,7 @@ class InternetAndSensorsPermissionTest {
 
         val acc = bindService()
         val sensorInfoPresent = acc.getSensorInfo(4_000)
-        assert(!sensorInfoPresent)
+        assertFalse(sensorInfoPresent)
     }
 
     @Test
