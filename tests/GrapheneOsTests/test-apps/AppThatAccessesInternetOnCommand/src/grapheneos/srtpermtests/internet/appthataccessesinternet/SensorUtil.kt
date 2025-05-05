@@ -6,44 +6,53 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.util.Log
 import kotlin.coroutines.resume
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 object SensorUtil {
     private const val TAG = "SensorUtil"
 
     @JvmStatic
-    fun getSensorEvent(sensorManager: SensorManager, sensor: Sensor): SensorEvent? {
+    fun getSensorEvent(
+        sensorManager: SensorManager,
+        sensor: Sensor,
+        timeoutMillis: Long,
+    ): SensorEvent? {
         return runBlocking {
-            withTimeout(20_000L) {
-                getSensorEventSuspend(sensorManager, sensor)
-            }
+            getSensorEventSuspend(sensorManager, sensor, timeoutMillis)
         }
     }
 
-    suspend fun getSensorEventSuspend(sensorManager: SensorManager, sensor: Sensor): SensorEvent? {
-        return withTimeout(20_000L) {
-            suspendCancellableCoroutine { cont ->
-                val sensorEventListener = object : SensorEventListener {
-                    override fun onSensorChanged(event: SensorEvent?) {
-                        Log.d(TAG, "onSensorChanged: ${event?.values?.asList()}")
-                        cont.resume(event)
-                    }
+    suspend fun getSensorEventSuspend(
+        sensorManager: SensorManager,
+        sensor: Sensor,
+        timeoutMillis: Long
+    ): SensorEvent? {
+        return withTimeoutOrNull(timeoutMillis) {
+            var sensorEventListener : SensorEventListener? = null
+            try {
+                suspendCancellableCoroutine { cont ->
+                    sensorEventListener = object : SensorEventListener {
+                        override fun onSensorChanged(event: SensorEvent?) {
+                            Log.d(TAG, "onSensorChanged: ${event?.values?.asList()}")
+                            cont.resume(event)
+                        }
 
-                    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+                        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+                    }
+                    sensorManager.registerListener(
+                        sensorEventListener,
+                        sensor,
+                        SensorManager.SENSOR_DELAY_FASTEST
+                    )
+                    Log.d(TAG, "registered sensor listener")
+                    // cont.invokeOnCancellation doesn't seem to be called on a success?
                 }
-                sensorManager.registerListener(
-                    sensorEventListener,
-                    sensor,
-                    SensorManager.SENSOR_DELAY_FASTEST
-                )
-                Log.d(TAG, "registered sensor listener")
-                cont.invokeOnCancellation {
+            } finally {
+                sensorEventListener?.let {
                     Log.d(TAG, "unregistered sensor listener")
-                    sensorManager.unregisterListener(sensorEventListener)
+                    sensorManager.unregisterListener(it)
                 }
             }
         }

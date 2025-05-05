@@ -9,12 +9,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
 
-
     <application android:label="GosInternetAccess" android:debuggable="true">
         <service android:name=".AccessInternetOnCommand"
-             android:exported="true" />
-        <service android:name=".SensorService"
             android:foregroundServiceType="dataSync"
-            android:exported="false" />
+            android:exported="true" />
     </application>
 </manifest>

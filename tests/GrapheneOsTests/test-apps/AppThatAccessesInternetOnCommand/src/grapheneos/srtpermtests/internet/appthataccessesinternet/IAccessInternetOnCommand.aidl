@@ -6,5 +6,5 @@ interface IAccessInternetOnCommand {
 
     boolean isConnected();
 
-    boolean getSensorInfo();
+    boolean getSensorInfo(long timeoutMillis);
 }

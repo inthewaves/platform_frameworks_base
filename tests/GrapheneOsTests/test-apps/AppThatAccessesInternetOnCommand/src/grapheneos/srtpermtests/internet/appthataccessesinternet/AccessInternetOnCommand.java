@@ -1,27 +1,35 @@
 package grapheneos.srtpermtests.internet.appthataccessesinternet;
 
 import android.Manifest;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.pm.ServiceInfo;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
 import android.os.IBinder;
+import android.os.Process;
 import android.util.Log;
 
 import java.net.InetAddress;
 import java.util.List;
 
 public class AccessInternetOnCommand extends Service {
+    private static final String NOTIF_CHANNEL_ID = "AccessInternetOnCommand_channel1";
+
     private static final String TAG = AccessInternetOnCommand.class.getSimpleName();
 
     private final IAccessInternetOnCommand.Stub mBinder = new IAccessInternetOnCommand.Stub() {
         @Override
         public void accessInternet() {
+            Log.d(TAG, "accessInternet, pid " + Process.myPid());
             var result = AccessInternetOnCommand.this.getPackageManager().checkPermission(
                     Manifest.permission.INTERNET,
                     AccessInternetOnCommand.this.getPackageName()
@@ -36,6 +44,7 @@ public class AccessInternetOnCommand extends Service {
 
         @Override
         public boolean isConnected() {
+            Log.d(TAG, "isConnected, pid " + Process.myPid());
             final var cm = AccessInternetOnCommand.this.getSystemService(ConnectivityManager.class);
             final var network = cm.getActiveNetwork();
             if (network == null) return false;
@@ -45,40 +54,38 @@ public class AccessInternetOnCommand extends Service {
         }
 
         @Override
-        public boolean getSensorInfo() {
-            /*
+        public boolean getSensorInfo(long timeoutMillis) {
+            Log.d(TAG, "getSensorInfo, pid " + Process.myPid());
             final var sm = AccessInternetOnCommand.this.getSystemService(SensorManager.class);
             var sensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
             if (sensor == null) {
                 return false;
             }
-            var sensorEvent = SensorUtil.getSensorEvent(sm, sensor);
+            var sensorEvent = SensorUtil.getSensorEvent(sm, sensor, timeoutMillis);
             Log.d(TAG, "sensorEvent=" + sensorEvent);
             return sensorEvent != null && sensorEvent.values.length > 0;
-            */
-
-            // Apparently sensors don't report anything if it's from this service...
-            var intent = new Intent(AccessInternetOnCommand.this, SensorService.class);
-            var bindResult = bindService(
-                    intent,
-                    new ServiceConnection() {
-                        @Override
-                        public void onServiceConnected(ComponentName name, IBinder service) {
-                        }
-
-                        @Override
-                        public void onServiceDisconnected(ComponentName name) {
-                        }
-                    },
-                    Context.BIND_AUTO_CREATE
-            );
-            Log.d(TAG, "bind result=" + bindResult);
-            startForegroundService(intent);
-
-            var latestEvent = SensorService.getLatestEvent();
-            return latestEvent != null && latestEvent.values.length > 0;
         }
     };
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Log.d(TAG, "onCreate, pid " + Process.myPid());
+
+        /*
+        var channelName = "Foreground service notification";
+        var chan = new NotificationChannel(NOTIF_CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_HIGH);
+        var service = getSystemService(NotificationManager.class);
+        service.createNotificationChannel(chan);
+
+        var notification = new Notification.Builder(this, NOTIF_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_secure)
+                .build();
+        // If not started as foreground service, sensors will not update at all
+        startForeground(1, notification);
+
+         */
+    }
 
     @Override
     public IBinder onBind(Intent intent) {
