@@ -6,11 +6,6 @@ android_test_helper_app {
     ],
     sdk_version: "current",
     min_sdk_version: "30",
-    static_libs: [
-        "androidx.appcompat_appcompat",
-        "androidx-constraintlayout_constraintlayout",
-        "com.google.android.material_material",
-    ],
     srcs: [
         "src/**/*.java",
         "src/**/*.aidl",

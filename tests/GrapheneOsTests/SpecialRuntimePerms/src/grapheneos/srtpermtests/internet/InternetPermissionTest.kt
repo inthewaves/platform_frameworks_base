@@ -1,6 +1,5 @@
 package grapheneos.srtpermtests.internet
 
-// import android.platform.test.rule.ScreenRecordRule.ScreenRecord
 import android.Manifest
 import android.app.Instrumentation
 import android.content.ComponentName
@@ -8,10 +7,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.net.ConnectivityManager
 import android.os.IBinder
 import android.os.UserHandle
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.AndroidJUnit4
 import androidx.test.uiautomator.UiDevice
 import com.android.compatibility.common.util.SystemUtil
 import grapheneos.srtpermtests.internet.appthataccessesinternet.IAccessInternetOnCommand
@@ -21,13 +20,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.AfterClass
 import org.junit.Assert
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
-
+import org.junit.runner.RunWith
 
 private val TEST_APP_SERVICE =
     TestApks.appThatAccessesInternet.packageName + ".AccessInternetOnCommand"
@@ -36,14 +36,7 @@ private val TEST_APP_SERVICE =
  * Based on
  * packages/modules/Permission/tests/cts/permission/src/android/permission/cts/LocationAccessCheckTest.java
  */
-// @RunWith(AndroidJUnit4::class)
-// @RunWith(AndroidJUnit4::class)
-//@RunWith(AndroidJUnit4::class)
-//@AppModeFull(
-//    reason = ("Cannot set system settings as instant app. Also we never show a location "
-//            + "access check notification for instant apps.")
-//)
-// @ScreenRecord
+@RunWith(AndroidJUnit4::class)
 class InternetPermissionTest {
 
     val mInstrumentation: Instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -63,12 +56,13 @@ class InternetPermissionTest {
         @JvmStatic
         fun beforeClass() {
             installBackgroundAccessApp()
-            setIdleAllowlist(TestApks.appThatAccessesInternet.packageName, true)
+            setIdleAllowlist(true)
         }
 
         @AfterClass
         @JvmStatic
         fun afterClass() {
+            setIdleAllowlist(false)
             val output = SystemUtil.runShellCommandOrThrow(
                 "pm uninstall " + TestApks.appThatAccessesInternet.packageName
             )
@@ -83,8 +77,6 @@ class InternetPermissionTest {
                 "pm install -r -g " + TestApks.appThatAccessesInternet.apkPath
             )
             Assert.assertTrue(output.contains("Success"))
-            // Wait for user sensitive to be updated, which is checked by LocationAccessCheck.
-            Thread.sleep(5000)
         }
 
 
@@ -93,9 +85,9 @@ class InternetPermissionTest {
             SystemUtil.runShellCommand("wm dismiss-keyguard")
         }
 
-        private fun setIdleAllowlist(packageName: String, enabled: Boolean) {
+        private fun setIdleAllowlist(enabled: Boolean) {
             val prefix = if (enabled) "+" else "-"
-            val command = "cmd deviceidle whitelist $prefix$packageName"
+            val command = "cmd deviceidle whitelist $prefix${TestApks.appThatAccessesInternet.packageName}"
             SystemUtil.runShellCommand(command)
         }
 
@@ -137,13 +129,6 @@ class InternetPermissionTest {
 
     @Before
     fun beforeEachTest() {
-        /*
-        mInstrumentation.uiAutomation.grantRuntimePermission(
-            TestApks.appThatAccessesInternet.packageName,
-            Manifest.permission.INTERNET
-        )
-
-         */
         SystemUtil.runWithShellPermissionIdentity(
             {
                 val user = UserHandle.of(mContext.userId)
@@ -156,7 +141,6 @@ class InternetPermissionTest {
             Manifest.permission.GRANT_RUNTIME_PERMISSIONS,
         )
         wakeUpAndDismissKeyguard()
-        // bindService()
     }
 
     @After
@@ -171,7 +155,7 @@ class InternetPermissionTest {
                 block()
                 return
             } catch (e: Throwable) {
-                if (attempts > 50) {
+                if (attempts > 25) {
                     throw e
                 }
                 attempts++
@@ -181,32 +165,7 @@ class InternetPermissionTest {
     }
 
     @Test
-    fun self_test() {
-        java.net.InetAddress.getByName("grapheneos.org")
-
-        val connectivityManager: ConnectivityManager = mContext
-            .getSystemService(ConnectivityManager::class.java)
-        val network = connectivityManager.activeNetwork
-        assertNotNull(network)
-    }
-
-    private fun startActivity(packageName: String, className: String) =
-        // The -W option waits for the activity launch to complete
-        SystemUtil.runShellCommandOrThrow(
-            "am start-activity --user 0 -W -n $packageName/$className")
-
-    @Test
     fun internet_granted_resolve_name_successful() {
-        /*
-        mInstrumentation.uiAutomation.grantRuntimePermission(
-            TestApks.appThatAccessesInternet.packageName,
-            Manifest.permission.INTERNET
-        )
-
-         */
-
-
-
         assertEquals(
             PackageManager.PERMISSION_GRANTED,
             mPackageManager.checkPermission(
@@ -215,43 +174,54 @@ class InternetPermissionTest {
             ),
             "expected INTERNET to be granted"
         )
-
-        //startActivity(TestApks.appThatAccessesInternet.packageName, ".MainActivity")
-        //Thread.sleep(3000)
-
-        unbindService()
-        // Rebind because revoking runtime permissions will stop the app
         bindService()
-        eventually {
-            assertNotNull(accessor)
-            accessor!!.accessInternet()
-        }
-
-        try {
-            accessor!!.accessInternet()
-        } catch (e: SecurityException) {
-            Thread.sleep(10_000)
-            throw e
-        }
+        eventually { assertNotNull(accessor) }
+        accessor!!.accessInternet()
     }
 
     @Test
-    fun internet_revoked_resolve_name_throws() {
+    fun internet_revoked_resolve_name_throws_exception_like_no_internet() {
         mInstrumentation.uiAutomation.revokeRuntimePermission(
             TestApks.appThatAccessesInternet.packageName,
             Manifest.permission.INTERNET
         )
 
-        // Rebind because revoking runtime permissions will stop the app
         bindService()
 
         eventually { assertNotNull(accessor) }
-        val accessor = accessor!!
-        val exception = assertFailsWith<SecurityException> { accessor.accessInternet() }
+        // We expect aSecurityException here since this is an RPC call. The message should contain
+        // the actual exception thrown in the test app.
+        val exception = assertFailsWith<SecurityException> { accessor!!.accessInternet() }
         val msg = assertNotNull(exception.message)
+        // Note that in AOSP, an app will throw a SecurityException if it doesn't have INTERNET
+        // permission. In GrapheneOS, revoking the INTERNET permission will cause the app to be
+        // treated as having no internet access
         assertContains(
             msg,
-            "java.net.UnknownHostException: Unable to resolve host"
+            "java.net.UnknownHostException: Unable to resolve host \"grapheneos.org\": No address associated with hostname"
+        )
+    }
+
+    @Test
+    fun internet_revoked_connectivity_manager_methods_show_not_connected() = runTest {
+        mInstrumentation.uiAutomation.revokeRuntimePermission(
+            TestApks.appThatAccessesInternet.packageName,
+            Manifest.permission.INTERNET
+        )
+
+        bindService()
+
+        eventually { assertNotNull(accessor) }
+        // We expect aSecurityException here since this is an RPC call. The message should contain
+        // the actual exception thrown in the test app.
+        val exception = assertFailsWith<SecurityException> { accessor!!.accessInternet() }
+        val msg = assertNotNull(exception.message)
+        // Note that in AOSP, an app will throw a SecurityException if it doesn't have INTERNET
+        // permission. In GrapheneOS, revoking the INTERNET permission will cause the app to be
+        // treated as having no internet access
+        assertContains(
+            msg,
+            "java.net.UnknownHostException: Unable to resolve host \"grapheneos.org\": No address associated with hostname"
         )
     }
 }
