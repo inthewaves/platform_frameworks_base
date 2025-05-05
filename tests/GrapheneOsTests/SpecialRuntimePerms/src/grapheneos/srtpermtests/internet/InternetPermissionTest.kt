@@ -92,17 +92,17 @@ class InternetPermissionTest {
             SystemUtil.runShellCommand(command)
         }
 
-        private suspend fun bindServiceSuspend(): IAccessInternetOnCommand {
+        private suspend fun bindService(): IAccessInternetOnCommand {
             if (serviceConn != null && accessor != null) {
                 return accessor!!
             }
 
-            return suspendCancellableCoroutine {
+            return suspendCancellableCoroutine { cont ->
                 serviceConn = object : ServiceConnection {
                     override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
                         val acc = IAccessInternetOnCommand.Stub.asInterface(service)
                         accessor = acc
-                        it.resume(acc) {
+                        cont.resume(acc) {
                             unbindService()
                         }
                     }
@@ -123,33 +123,6 @@ class InternetPermissionTest {
                     Context.BIND_AUTO_CREATE or Context.BIND_NOT_FOREGROUND
                 )
             }
-        }
-
-        private fun bindService() {
-            if (serviceConn != null && accessor != null) {
-                return
-            }
-
-            serviceConn = object : ServiceConnection {
-                override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-                    accessor = IAccessInternetOnCommand.Stub.asInterface(service)
-                }
-
-                override fun onServiceDisconnected(name: ComponentName?) {
-                    serviceConn = null
-                    accessor = null
-                }
-            }
-            val intent = Intent()
-            intent.component = ComponentName(
-                TestApks.appThatAccessesInternet.packageName,
-                TEST_APP_SERVICE
-            )
-            mContext.bindService(
-                intent,
-                serviceConn!!,
-                Context.BIND_AUTO_CREATE or Context.BIND_NOT_FOREGROUND
-            )
         }
 
         private fun unbindService() {
@@ -192,8 +165,15 @@ class InternetPermissionTest {
             ),
             "expected INTERNET to be granted"
         )
-        val acc = bindServiceSuspend()
+        val acc = bindService()
         acc.accessInternet()
+    }
+
+    @Test
+    fun internet_granted_connectivity_manager_methods_show_connected() = runTest {
+        val acc = bindService()
+        val isConnected = acc.isConnected()
+        assert(isConnected)
     }
 
     @Test
@@ -203,7 +183,7 @@ class InternetPermissionTest {
             Manifest.permission.INTERNET
         )
 
-        val acc = bindServiceSuspend()
+        val acc = bindService()
         // We expect a SecurityException here, since this is an RPC call. The message should contain
         // the actual exception thrown in the test app.
         val exception = assertFailsWith<SecurityException> { acc.accessInternet() }
@@ -224,17 +204,8 @@ class InternetPermissionTest {
             Manifest.permission.INTERNET
         )
 
-        val acc = bindServiceSuspend()
-        // We expect a SecurityException here, since this is an RPC call. The message should contain
-        // the actual exception thrown in the test app.
-        val exception = assertFailsWith<SecurityException> { acc.accessInternet() }
-        val msg = assertNotNull(exception.message)
-        // Note that in AOSP, an app will throw a SecurityException if it doesn't have INTERNET
-        // permission. In GrapheneOS, revoking the INTERNET permission will cause the app to be
-        // treated as having no internet access
-        assertContains(
-            msg,
-            "java.net.UnknownHostException: Unable to resolve host \"grapheneos.org\": No address associated with hostname"
-        )
+        val acc = bindService()
+        val isConnected = acc.isConnected()
+        assert(!isConnected)
     }
 }
