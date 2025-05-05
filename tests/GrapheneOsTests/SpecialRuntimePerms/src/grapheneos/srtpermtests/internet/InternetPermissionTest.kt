@@ -20,6 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.AfterClass
@@ -91,6 +92,39 @@ class InternetPermissionTest {
             SystemUtil.runShellCommand(command)
         }
 
+        private suspend fun bindServiceSuspend(): IAccessInternetOnCommand {
+            if (serviceConn != null && accessor != null) {
+                return accessor!!
+            }
+
+            return suspendCancellableCoroutine {
+                serviceConn = object : ServiceConnection {
+                    override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                        val acc = IAccessInternetOnCommand.Stub.asInterface(service)
+                        accessor = acc
+                        it.resume(acc) {
+                            unbindService()
+                        }
+                    }
+
+                    override fun onServiceDisconnected(name: ComponentName?) {
+                        serviceConn = null
+                        accessor = null
+                    }
+                }
+                val intent = Intent()
+                intent.component = ComponentName(
+                    TestApks.appThatAccessesInternet.packageName,
+                    TEST_APP_SERVICE
+                )
+                mContext.bindService(
+                    intent,
+                    serviceConn!!,
+                    Context.BIND_AUTO_CREATE or Context.BIND_NOT_FOREGROUND
+                )
+            }
+        }
+
         private fun bindService() {
             if (serviceConn != null && accessor != null) {
                 return
@@ -148,24 +182,8 @@ class InternetPermissionTest {
         unbindService()
     }
 
-    private inline fun eventually(block: () -> Unit) {
-        var attempts = 0
-        while (true) {
-            try {
-                block()
-                return
-            } catch (e: Throwable) {
-                if (attempts > 25) {
-                    throw e
-                }
-                attempts++
-                Thread.sleep(500)
-            }
-        }
-    }
-
     @Test
-    fun internet_granted_resolve_name_successful() {
+    fun internet_granted_resolve_name_successful() = runTest {
         assertEquals(
             PackageManager.PERMISSION_GRANTED,
             mPackageManager.checkPermission(
@@ -174,24 +192,21 @@ class InternetPermissionTest {
             ),
             "expected INTERNET to be granted"
         )
-        bindService()
-        eventually { assertNotNull(accessor) }
-        accessor!!.accessInternet()
+        val acc = bindServiceSuspend()
+        acc.accessInternet()
     }
 
     @Test
-    fun internet_revoked_resolve_name_throws_exception_like_no_internet() {
+    fun internet_revoked_resolve_name_throws_exception_like_no_internet() = runTest {
         mInstrumentation.uiAutomation.revokeRuntimePermission(
             TestApks.appThatAccessesInternet.packageName,
             Manifest.permission.INTERNET
         )
 
-        bindService()
-
-        eventually { assertNotNull(accessor) }
-        // We expect aSecurityException here since this is an RPC call. The message should contain
+        val acc = bindServiceSuspend()
+        // We expect a SecurityException here, since this is an RPC call. The message should contain
         // the actual exception thrown in the test app.
-        val exception = assertFailsWith<SecurityException> { accessor!!.accessInternet() }
+        val exception = assertFailsWith<SecurityException> { acc.accessInternet() }
         val msg = assertNotNull(exception.message)
         // Note that in AOSP, an app will throw a SecurityException if it doesn't have INTERNET
         // permission. In GrapheneOS, revoking the INTERNET permission will cause the app to be
@@ -209,12 +224,10 @@ class InternetPermissionTest {
             Manifest.permission.INTERNET
         )
 
-        bindService()
-
-        eventually { assertNotNull(accessor) }
-        // We expect aSecurityException here since this is an RPC call. The message should contain
+        val acc = bindServiceSuspend()
+        // We expect a SecurityException here, since this is an RPC call. The message should contain
         // the actual exception thrown in the test app.
-        val exception = assertFailsWith<SecurityException> { accessor!!.accessInternet() }
+        val exception = assertFailsWith<SecurityException> { acc.accessInternet() }
         val msg = assertNotNull(exception.message)
         // Note that in AOSP, an app will throw a SecurityException if it doesn't have INTERNET
         // permission. In GrapheneOS, revoking the INTERNET permission will cause the app to be

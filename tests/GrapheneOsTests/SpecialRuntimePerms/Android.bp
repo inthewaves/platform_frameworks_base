@@ -19,6 +19,7 @@ android_test {
         "android.content.pm.flags-aconfig-java",
         "ShortcutManagerTestUtils",
         "kotlin-test",
+        "kotlinx_coroutines_test",
         "grapheneos-test-common",
         // TODO: Figure out how to use cts/tests/tests/content/src/android/content/pm/cts/PackageManagerShellCommandInstallTest.java
         // IIntentSender...
