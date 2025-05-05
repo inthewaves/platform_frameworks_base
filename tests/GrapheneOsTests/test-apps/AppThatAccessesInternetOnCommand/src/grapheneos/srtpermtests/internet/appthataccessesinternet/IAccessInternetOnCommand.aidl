@@ -5,4 +5,6 @@ interface IAccessInternetOnCommand {
     void accessInternet();
 
     boolean isConnected();
+
+    boolean getSensorInfo();
 }

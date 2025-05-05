@@ -7,10 +7,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.IBinder
 import android.os.UserHandle
+import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.AndroidJUnit4
 import androidx.test.uiautomator.UiDevice
@@ -19,13 +24,16 @@ import grapheneos.srtpermtests.internet.appthataccessesinternet.IAccessInternetO
 import grapheneos.srtpermtests.packageinstaller.TestApks
 import java.net.InetAddress
 import java.net.UnknownHostException
+import kotlin.coroutines.resume
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.AfterClass
 import org.junit.Assume.assumeTrue
@@ -229,5 +237,54 @@ class InternetAndSensorsPermissionTest {
         val acc = bindService()
         val isConnected = acc.isConnected()
         assert(!isConnected)
+    }
+
+    @Test
+    fun sensors_get() = runTest {
+        val acc = bindService()
+        val sensorInfoPresent = acc.getSensorInfo()
+        assert(sensorInfoPresent)
+    }
+
+    @Test
+    fun sensors_self_test() {
+        val sm = mContext.getSystemService(SensorManager::class.java)
+        val sensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        assertNotNull(sensor)
+
+        val sensorEvent = SensorUtil.getSensorEvent(sm, sensor)
+        assertNotNull(sensorEvent)
+        assertTrue(sensorEvent.values.isNotEmpty())
+    }
+}
+
+object SensorUtil {
+    private const val TAG = "SensorUtil"
+
+    fun getSensorEvent(sensorManager: SensorManager, sensor: Sensor): SensorEvent? {
+        return runBlocking {
+            withTimeout(20_000L) {
+                suspendCancellableCoroutine { cont ->
+                    val sensorEventListener = object : SensorEventListener {
+                        override fun onSensorChanged(event: SensorEvent?) {
+                            Log.d(TAG, "onSensorChanged: ${event?.values?.asList()}")
+                            cont.resume(event)
+                        }
+
+                        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+                    }
+                    sensorManager.registerListener(
+                        sensorEventListener,
+                        sensor,
+                        SensorManager.SENSOR_DELAY_NORMAL
+                    )
+                    Log.d(TAG, "registered sensor listener")
+                    cont.invokeOnCancellation {
+                        Log.d(TAG, "unregistered sensor listener")
+                        sensorManager.unregisterListener(sensorEventListener)
+                    }
+                }
+            }
+        }
     }
 }
