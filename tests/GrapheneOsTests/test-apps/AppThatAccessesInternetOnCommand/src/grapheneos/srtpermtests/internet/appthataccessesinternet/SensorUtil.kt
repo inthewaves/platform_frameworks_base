@@ -5,9 +5,10 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.util.Log
-import kotlin.coroutines.resume
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
 object SensorUtil {
@@ -30,31 +31,27 @@ object SensorUtil {
         timeoutMillis: Long
     ): SensorEvent? {
         return withTimeoutOrNull(timeoutMillis) {
-            var sensorEventListener : SensorEventListener? = null
-            try {
-                suspendCancellableCoroutine { cont ->
-                    sensorEventListener = object : SensorEventListener {
-                        override fun onSensorChanged(event: SensorEvent?) {
-                            Log.d(TAG, "onSensorChanged: ${event?.values?.asList()}")
-                            cont.resume(event)
-                        }
-
-                        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+            val sensorEventFlow = callbackFlow<SensorEvent?> {
+                val sensorEventListener = object : SensorEventListener {
+                    override fun onSensorChanged(event: SensorEvent?) {
+                        Log.d(TAG, "onSensorChanged: ${event?.values?.asList()}")
+                        channel.trySend(event)
                     }
-                    sensorManager.registerListener(
-                        sensorEventListener,
-                        sensor,
-                        SensorManager.SENSOR_DELAY_FASTEST
-                    )
-                    Log.d(TAG, "registered sensor listener")
-                    // cont.invokeOnCancellation doesn't seem to be called on a success?
+
+                    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
                 }
-            } finally {
-                sensorEventListener?.let {
+                sensorManager.registerListener(
+                    sensorEventListener,
+                    sensor,
+                    SensorManager.SENSOR_DELAY_FASTEST
+                )
+                Log.d(TAG, "registered sensor listener")
+                awaitClose {
+                    sensorManager.unregisterListener(sensorEventListener)
                     Log.d(TAG, "unregistered sensor listener")
-                    sensorManager.unregisterListener(it)
                 }
             }
+            sensorEventFlow.first()
         }
     }
 }
