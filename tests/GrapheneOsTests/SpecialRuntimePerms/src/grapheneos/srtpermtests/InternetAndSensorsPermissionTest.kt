@@ -1,4 +1,4 @@
-package grapheneos.srtpermtests.internet
+package grapheneos.srtpermtests
 
 import android.Manifest
 import android.app.Instrumentation
@@ -7,45 +7,41 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.IBinder
-import android.util.Log
+import grapheneos.test.common.notifications.GtsNotificationListenerHelperRule
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.AndroidJUnit4
 import androidx.test.uiautomator.UiDevice
 import com.android.compatibility.common.util.SystemUtil
+import com.android.internal.messages.nano.SystemMessageProto
 import grapheneos.srtpermtests.internet.appthataccessesinternet.IAccessInternetOnCommand
 import grapheneos.srtpermtests.packageinstaller.TestApks
+import grapheneos.test.common.notifications.GtsNotificationListenerServiceUtils
 import java.net.InetAddress
 import java.net.UnknownHostException
-import kotlin.coroutines.resume
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.AfterClass
-import org.junit.Assume.assumeTrue
+import org.junit.Assume
 import org.junit.Before
 import org.junit.BeforeClass
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 
+
 private val TEST_APP_PKG = TestApks.appThatAccessesInternet.packageName
-private val TEST_APP_SERVICE =
-    TEST_APP_PKG + ".AccessInternetOnCommand"
+private val TEST_APP_SERVICE = "$TEST_APP_PKG.AccessInternetOnCommand"
 
 private const val SENSORS_TEST_TIMEOUT_MILLIS = 4_000L
 
@@ -61,12 +57,10 @@ class InternetAndSensorsPermissionTest {
     val uiDevice: UiDevice = UiDevice.getInstance(mInstrumentation)
 
     companion object {
-        @JvmField
-        val mContext: Context = androidx.test.InstrumentationRegistry.getTargetContext();
-        @JvmField
-        var serviceConn: ServiceConnection? = null
-        @JvmField
-        var accessor: IAccessInternetOnCommand? = null
+
+        private val mContext: Context = androidx.test.InstrumentationRegistry.getTargetContext();
+        private var serviceConn: ServiceConnection? = null
+        private var accessor: IAccessInternetOnCommand? = null
 
         @BeforeClass
         @JvmStatic
@@ -76,13 +70,13 @@ class InternetAndSensorsPermissionTest {
             // Note: Commenting this out alone seems to result in all tests still passing.
             // Removing this and adding Context.BIND_NOT_FOREGROUND to the service binding,
             // will cause some of the internet granted tests to fail.
-            // setIdleAllowlist(true)
+            setIdleAllowlist(true)
         }
 
         @AfterClass
         @JvmStatic
         fun afterClass() {
-            //setIdleAllowlist(false)
+            setIdleAllowlist(false)
             uninstallBackgroundAccessApp()
             unbindService()
         }
@@ -155,6 +149,10 @@ class InternetAndSensorsPermissionTest {
         }
     }
 
+    @Rule
+    @JvmField
+    val ctsNotificationListenerHelper = GtsNotificationListenerHelperRule(mContext)
+
     @Before
     fun beforeEachTest() {
         mInstrumentation.uiAutomation.grantRuntimePermission(
@@ -196,7 +194,7 @@ class InternetAndSensorsPermissionTest {
 
     @Test
     fun internet_revoked_resolve_name_throws_exception_like_no_internet() = runTest {
-        assumeTrue(
+        Assume.assumeTrue(
             "network should be available",
             try {
                 InetAddress.getByName("grapheneos.org")
@@ -231,10 +229,10 @@ class InternetAndSensorsPermissionTest {
     fun internet_revoked_connectivity_manager_methods_show_not_connected() = runTest {
         val cm = mContext.getSystemService(ConnectivityManager::class.java)
         val network = cm.activeNetwork
-        assumeTrue(network != null)
+        Assume.assumeTrue(network != null)
         val caps = cm.getNetworkCapabilities(network)
-        assumeTrue(caps != null)
-        assumeTrue(caps!!.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+        Assume.assumeTrue(caps != null)
+        Assume.assumeTrue(caps!!.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
 
         mInstrumentation.uiAutomation.revokeRuntimePermission(
             TEST_APP_PKG,
@@ -255,6 +253,11 @@ class InternetAndSensorsPermissionTest {
 
     @Test
     fun sensors_denied_get_fail() = runTest {
+        GtsNotificationListenerServiceUtils.cancelNotification(
+            "android",
+            SystemMessageProto.SystemMessage.NOTE_MISSING_PERMISSION_OTHER_SENSORS
+        )
+
         mInstrumentation.uiAutomation.revokeRuntimePermission(
             TEST_APP_PKG,
             Manifest.permission.OTHER_SENSORS
@@ -262,7 +265,18 @@ class InternetAndSensorsPermissionTest {
 
         val acc = bindService()
         val sensorInfoPresent = acc.getSensorInfo(SENSORS_TEST_TIMEOUT_MILLIS)
-        assertFalse(sensorInfoPresent)
-        // TODO: add CtsNotificationListener to listen for the sensors access notification...
+        assertFalse(sensorInfoPresent, "expected getSensorInfo to fail/timeout when OTHER_SENSORS denied")
+
+        // note: this isn't designed to show if it's explicitly denied by user, but
+        // mInstrumentation.uiAutomation.revokeRuntimePermission doesn't seem to treat it that way
+        val notif = GtsNotificationListenerServiceUtils.getNotificationForPackageAndId(
+            "android",
+            SystemMessageProto.SystemMessage.NOTE_MISSING_PERMISSION_OTHER_SENSORS,
+            false
+        )
+        assertNotNull(
+            notif,
+            "missing notification for when sensors access denied by OTHER_SENSORS permission"
+        )
     }
 }

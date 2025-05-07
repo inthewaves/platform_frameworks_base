@@ -38,6 +38,14 @@
                 <action android:name="android.intent.action.UNARCHIVE_PACKAGE"/>
             </intent-filter>
         </receiver>
+
+        <service android:name="grapheneos.test.common.notifications.GtsNotificationListenerService"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
     </application>
 
     <instrumentation android:name="androidx.test.runner.AndroidJUnitRunner"

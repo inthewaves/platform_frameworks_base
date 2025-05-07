@@ -2,6 +2,7 @@ android_library {
     name: "grapheneos-test-common",
     srcs: [
         "src/**/*.kt",
+        "src/**/*.java",
     ],
     platform_apis: true,
     static_libs: [

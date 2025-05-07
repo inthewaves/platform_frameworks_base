@@ -21,6 +21,7 @@ android_test {
         "kotlin-test",
         "kotlinx_coroutines_test",
         "grapheneos-test-common",
+        "framework-protos",
         // TODO: Figure out how to use cts/tests/tests/content/src/android/content/pm/cts/PackageManagerShellCommandInstallTest.java
         // IIntentSender...
         // "services.core",
