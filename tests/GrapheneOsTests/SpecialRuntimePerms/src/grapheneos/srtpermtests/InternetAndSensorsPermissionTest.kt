@@ -18,6 +18,7 @@ import com.android.compatibility.common.util.SystemUtil
 import com.android.internal.messages.nano.SystemMessageProto
 import grapheneos.srtpermtests.internet.appthataccessesinternet.IAccessInternetOnCommand
 import grapheneos.srtpermtests.packageinstaller.TestApks
+import grapheneos.test.common.DeadObjectExceptionRetryRule
 import grapheneos.test.common.notifications.GtsNotificationListenerServiceUtils
 import java.net.InetAddress
 import java.net.UnknownHostException
@@ -37,8 +38,6 @@ import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-
-
 
 private val TEST_APP_PKG = TestApks.appThatAccessesInternet.packageName
 private val TEST_APP_SERVICE = "$TEST_APP_PKG.AccessInternetOnCommand"
@@ -62,6 +61,7 @@ class InternetAndSensorsPermissionTest {
         private var serviceConn: ServiceConnection? = null
         private var accessor: IAccessInternetOnCommand? = null
 
+        // maybe refactor into a JUnit ClassRule if more tests of this nature are needed
         @BeforeClass
         @JvmStatic
         fun beforeClass() {
@@ -149,9 +149,11 @@ class InternetAndSensorsPermissionTest {
         }
     }
 
-    @Rule
-    @JvmField
+    @get:Rule
     val ctsNotificationListenerHelper = GtsNotificationListenerHelperRule(mContext)
+
+    @get:Rule
+    val deadObjectRetryRule = DeadObjectExceptionRetryRule(retryCount = 2)
 
     @Before
     fun beforeEachTest() {
@@ -252,7 +254,7 @@ class InternetAndSensorsPermissionTest {
     }
 
     @Test
-    fun sensors_denied_get_fail() = runTest {
+    fun sensors_denied_get_fail_with_notif() = runTest {
         GtsNotificationListenerServiceUtils.cancelNotification(
             "android",
             SystemMessageProto.SystemMessage.NOTE_MISSING_PERMISSION_OTHER_SENSORS
@@ -267,7 +269,7 @@ class InternetAndSensorsPermissionTest {
         val sensorInfoPresent = acc.getSensorInfo(SENSORS_TEST_TIMEOUT_MILLIS)
         assertFalse(sensorInfoPresent, "expected getSensorInfo to fail/timeout when OTHER_SENSORS denied")
 
-        // note: this isn't designed to show if it's explicitly denied by user, but
+        // note: the notif isn't meant to ben show if OTHER_SENSORS explicitly denied by user, but
         // mInstrumentation.uiAutomation.revokeRuntimePermission doesn't seem to treat it that way
         val notif = GtsNotificationListenerServiceUtils.getNotificationForPackageAndId(
             "android",
