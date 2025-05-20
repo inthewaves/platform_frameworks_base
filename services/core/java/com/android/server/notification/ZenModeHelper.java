@@ -323,9 +323,8 @@ public class ZenModeHelper {
      * @return The censored sending state derived from the the notification and the user's do not
      *         disturb settings.
      */
-    CensoredSendState getCensoredSendStateFromUserDndOnVisuals(NotificationRecord record,
-                                                               int userId) {
-        final ZenModeConfig config = getConfigCopyForUser(userId);
+    CensoredSendState getCensoredSendStateFromUserDndOnVisuals(NotificationRecord record) {
+        final ZenModeConfig config = getConfigCopyForUser(record.getUser());
         if (config == null) {
             return CensoredSendState.SEND_NORMAL;
         }
@@ -2181,9 +2180,9 @@ public class ZenModeHelper {
      *
      * @return a copy of the zen mode configuration for the given userId
      */
-    private ZenModeConfig getConfigCopyForUser(int userId) {
-        synchronized (mConfig) {
-            final ZenModeConfig config = mConfigs.get(userId);
+    private ZenModeConfig getConfigCopyForUser(UserHandle user) {
+        synchronized (mConfigLock) {
+            final ZenModeConfig config = getConfigLocked(user, true);
             return config != null ? config.copy() : null;
         }
     }
@@ -2203,6 +2202,10 @@ public class ZenModeHelper {
         return mDefaultConfig.getZenPolicy();
     }
 
+    private ZenModeConfig getConfigLocked(@NonNull UserHandle user) {
+        return getConfigLocked(user, false);
+    }
+
     /**
      * Returns the {@link ZenModeConfig} corresponding to the supplied {@link UserHandle}.
      * The result will be {@link #mConfig} if the user is {@link UserHandle#CURRENT}, or the same
@@ -2212,8 +2215,8 @@ public class ZenModeHelper {
      */
     @Nullable
     @GuardedBy("mConfigLock")
-    private ZenModeConfig getConfigLocked(@NonNull UserHandle user) {
-        if (Flags.modesMultiuser()) {
+    private ZenModeConfig getConfigLocked(@NonNull UserHandle user, boolean force) {
+        if (Flags.modesMultiuser() || force) {
             if (user.getIdentifier() == UserHandle.USER_CURRENT || user.getIdentifier() == mUser) {
                 return mConfig;
             } else {
