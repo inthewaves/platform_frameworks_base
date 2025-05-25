@@ -300,10 +300,10 @@ public class ZenModeHelper {
      *     ({@link CensoredSendState#SEND_NORMAL}).</li></ul>
      * </ul>
      *
-     * <p>No mConfig lock is needed during parsing; we work on a copy of the ZenModeConfig.</p>
+     * <p>No mConfigLock is needed during parsing; we work on a copy of the ZenModeConfig.</p>
      *
      * <p>See {@link #computeZenMode()} for where the logic for computing zen mode was taken from.
-     * See {@link #updateConsolidatedPolicy(String)} for where the logic for creating a consolidated
+     * See {@link #updateAndApplyConsolidatedPolicyAndDeviceEffects} for where the logic for creating a consolidated
      * policy was taken from. Both methods are combined here to be able to generate a consolidated
      * policy for an arbitrary ZenModeConfig. We can't use those methods directly, since they
      * operate on only the foreground user.</p>
@@ -319,13 +319,14 @@ public class ZenModeHelper {
      * System.currentTimeMillis.</p>, but that would make this more complicated.
      *
      * @param record The notification that is checked to see if it should be intercepted by DND.
-     * @param userId The identifier of the user to check the DND settings for.
      * @return The censored sending state derived from the the notification and the user's do not
      *         disturb settings.
      */
     CensoredSendState getCensoredSendStateFromUserDndOnVisuals(NotificationRecord record) {
+        Log.d(TAG, "GOS-DEBUG: modesUi flag is " + Flags.modesUi());
         final ZenModeConfig config = getConfigCopyForUser(record.getUser());
         if (config == null) {
+            Log.d(TAG, "GOS-DEBUG: getCensoredSendState: config is null");
             return CensoredSendState.SEND_NORMAL;
         }
 
@@ -334,24 +335,34 @@ public class ZenModeHelper {
         final ZenPolicy zenPolicy = new ZenPolicy();
         int zenMode = Global.ZEN_MODE_OFF;
         boolean isZenModeFromManualConfig = false;
-        if (config.manualRule != null) {
+        if (config.isManualActive()) {
             // Don't replace the zen mode anymore. This mirrors the line
-            // `if (mConfig.manualRule != null) return mConfig.manualRule.zenMode;`
-            // from computeZenMode.
+            // `if (mConfig.isManualActive()) return mConfig.manualRule.zenMode;`
+            // from #computeZenMode.
             isZenModeFromManualConfig = true;
             zenMode = config.manualRule.zenMode;
             if (zenMode == Global.ZEN_MODE_OFF) {
                 // zenMode won't be changed again anyway, so it won't be intercepted. Send normally
                 // to avoid constructing a consolidated policy.
+                Log.d(TAG, "GOS-DEBUG: getCensoredSendState: manual and off");
                 return CensoredSendState.SEND_NORMAL;
             }
-            applyCustomPolicy(mConfig, zenPolicy, config.manualRule, true);
+
+            // From the mConfig.isManualActive() branch in the method
+            // #updateAndApplyConsolidatedPolicyAndDeviceEffects
+            applyCustomPolicy(config, zenPolicy, config.manualRule, true);
         }
 
-        // This is apparently how automatic rules are parsed.
+        // This is apparently how automatic rules are parsed in computeZenMode.
         for (ZenRule automaticRule : config.automaticRules.values()) {
             if (automaticRule.isActive()) {
-                applyCustomPolicy(mConfig, zenPolicy, automaticRule, false);
+                // From #updateAndApplyConsolidatedPolicyAndDeviceEffects, note that we may still
+                // potentially apply these automatic rules even if manual is active
+                if (automaticRule.zenMode != Global.ZEN_MODE_OFF) {
+                    applyCustomPolicy(config, zenPolicy, automaticRule, false);
+                }
+
+                // Don't update the zenMode if manual config was active.
                 if (!isZenModeFromManualConfig
                         && zenSeverity(automaticRule.zenMode) > zenSeverity(zenMode)) {
                     zenMode = automaticRule.zenMode;
@@ -361,6 +372,7 @@ public class ZenModeHelper {
 
         if (zenMode == Global.ZEN_MODE_OFF) {
             // Send normally to avoid constructing a consolidated policy.
+            Log.d(TAG, "GOS-DEBUG: off after automatic rule check");
             return CensoredSendState.SEND_NORMAL;
         }
 
@@ -373,11 +385,15 @@ public class ZenModeHelper {
                     NotificationManager.Policy.SUPPRESSED_EFFECT_NOTIFICATION_LIST) != 0) {
                 // If user A has DND on and is hiding notifications from notification shade/loc,
                 // then user B will not get any censored notifications
+                Log.d(TAG, "GOS-DEBUG: suppressed send");
                 return CensoredSendState.DONT_SEND;
             }
             // Otherwise user B will get muted censored notifications
+            Log.d(TAG, "GOS-DEBUG: quiet send");
             return CensoredSendState.SEND_QUIET;
         }
+
+        Log.d(TAG, "GOS-DEBUG: normal send");
         return CensoredSendState.SEND_NORMAL;
     }
 
@@ -2407,8 +2423,10 @@ public class ZenModeHelper {
             boolean useManualConfig) {
         if (rule.zenMode == Global.ZEN_MODE_NO_INTERRUPTIONS) {
             if (Flags.modesApi() && Flags.modesUi()) {
+                Log.d(TAG, "GOS-DEBUG: Route 1");
                 policy.apply(ZenPolicy.getBasePolicyInterruptionFilterNone());
             } else {
+                Log.d(TAG, "GOS-DEBUG: Route 2");
                 policy.apply(new ZenPolicy.Builder()
                         .disallowAllSounds()
                         .allowPriorityChannels(false)
@@ -2416,8 +2434,10 @@ public class ZenModeHelper {
             }
         } else if (rule.zenMode == Global.ZEN_MODE_ALARMS) {
             if (Flags.modesApi() && Flags.modesUi()) {
+                Log.d(TAG, "GOS-DEBUG: Route 3");
                 policy.apply(ZenPolicy.getBasePolicyInterruptionFilterAlarms());
             } else {
+                Log.d(TAG, "GOS-DEBUG: Route 4");
                 policy.apply(new ZenPolicy.Builder()
                         .disallowAllSounds()
                         .allowAlarms(true)
@@ -2426,11 +2446,13 @@ public class ZenModeHelper {
                         .build());
             }
         } else if (rule.zenPolicy != null) {
+            Log.d(TAG, "GOS-DEBUG: Route 5");
             policy.apply(rule.zenPolicy);
         } else {
             if (Flags.modesApi()) {
                 if (useManualConfig) {
                     // manual rule is configured using the settings stored directly in ZenModeConfig
+                    Log.d(TAG, "GOS-DEBUG: Route 6");
                     policy.apply(config.getZenPolicy());
                 } else {
                     // under modes_api flag, an active automatic rule with no specified policy
@@ -2442,6 +2464,7 @@ public class ZenModeHelper {
                             ? mDefaultConfig.getZenPolicy() : config.getZenPolicy());
                 }
             } else {
+                Log.d(TAG, "GOS-DEBUG: Route 7");
                 // active rule with no specified policy inherits the manual rule config settings
                 policy.apply(config.getZenPolicy());
             }

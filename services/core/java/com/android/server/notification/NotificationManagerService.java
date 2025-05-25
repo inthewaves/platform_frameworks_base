@@ -413,7 +413,7 @@ import java.util.stream.Collectors;
 /** {@hide} */
 public class NotificationManagerService extends SystemService {
     public static final String TAG = "NotificationService";
-    public static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG);
+    public static final boolean DBG = true; //Log.isLoggable(TAG, Log.DEBUG);
     public static final boolean ENABLE_CHILD_NOTIFICATIONS
             = SystemProperties.getBoolean("debug.child_notifs", true);
 
