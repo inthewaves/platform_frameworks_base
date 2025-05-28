@@ -1841,6 +1841,9 @@ class ActivityStarter {
             // no-user-leaving implies not entering PiP.
             transition.setCanPipOnFinish(false /* canPipOnFinish */);
         }
+        if (avoidMoveToFront() && transition != null) {
+            Slog.d(TAG, "GOS-DEBUG: Avoid move to front called!");
+        }
         if (isIndependentLaunch && transition != null) {
             transitionController.requestStartTransition(transition,
                     mTargetTask == null ? started.getTask() : mTargetTask,
