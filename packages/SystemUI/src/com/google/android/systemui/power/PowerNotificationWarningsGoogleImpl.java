@@ -58,7 +58,7 @@ public class PowerNotificationWarningsGoogleImpl extends PowerNotificationWarnin
         mMainHandler = mainHandler;
         mReceiver = new Receiver();
         mainHandler.post(() -> {
-            if ("bluejay".equals(Build.DEVICE)) {
+            if (true || "bluejay".equals(Build.DEVICE)) {
                 Log.d(TAG, "enabling mBatteryReplacementNotification");
                 mBatteryReplacementNotification = new BatteryReplacementNotification(mContext,
                         Clock.systemUTC());
@@ -102,7 +102,7 @@ public class PowerNotificationWarningsGoogleImpl extends PowerNotificationWarnin
                 if (Intent.ACTION_BATTERY_CHANGED.equals(action)) {
                     int batteryHealth = intent.getIntExtra(BatteryManager.EXTRA_HEALTH, 1);
                     int cycleCount = intent.getIntExtra(BatteryManager.EXTRA_CYCLE_COUNT, -1);
-                    mBatteryReplacementNotification.onBatteryInfoChanged(batteryHealth, cycleCount);
+                    mBatteryReplacementNotification.onBatteryInfoChanged(8, 380);
                 }
             }
         }
