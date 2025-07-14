@@ -232,6 +232,8 @@ public final class NotificationRecord {
 
     private String mSummarization = null;
 
+    boolean mIsProcessingForCensoredNotif = false;
+
     public NotificationRecord(Context context, StatusBarNotification sbn,
             NotificationChannel channel) {
         this.sbn = sbn;

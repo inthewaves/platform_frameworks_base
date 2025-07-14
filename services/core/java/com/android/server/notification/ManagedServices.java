@@ -106,7 +106,7 @@ import java.util.Set;
  */
 abstract public class ManagedServices {
     protected final String TAG = getClass().getSimpleName().replace('$', '.');
-    protected final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
+    protected final boolean DEBUG = true; // Log.isLoggable(TAG, Log.DEBUG);
 
     private static final int ON_BINDING_DIED_REBIND_DELAY_MS = 10000;
     protected static final String ENABLED_SERVICES_SEPARATOR = ":";

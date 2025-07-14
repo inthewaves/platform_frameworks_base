@@ -427,7 +427,7 @@ import java.util.stream.Collectors;
 /** {@hide} */
 public class NotificationManagerService extends SystemService {
     public static final String TAG = "NotificationService";
-    public static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG);
+    public static final boolean DBG = true; //Log.isLoggable(TAG, Log.DEBUG);
     public static final boolean ENABLE_CHILD_NOTIFICATIONS
             = SystemProperties.getBoolean("debug.child_notifs", true);
 
@@ -2309,6 +2309,7 @@ public class NotificationManagerService extends SystemService {
                     mConditionProviders.onUserStopped(userHandle);
                     mListeners.onUserStopped(userHandle);
                     mAssistants.onUserStopped(userHandle);
+                    mZenModeHelper.onUserStopped(userHandle);
                 }
             } else if (
                     isProfileUnavailable(action)) {
@@ -9975,7 +9976,13 @@ public class NotificationManagerService extends SystemService {
                         // Now that the notification is posted, we can now consider sending a
                         // censored copy of it to the foreground user (if the foreground user
                         // differs from the intended recipient).
-                        final CensoredSendState state = getCensoredSendStateForNotification(r);
+                        r.mIsProcessingForCensoredNotif = true;
+                        final CensoredSendState state;
+                        try {
+                            state = getCensoredSendStateForNotification(r);
+                        } finally {
+                            r.mIsProcessingForCensoredNotif = false;
+                        }
                         if (state != CensoredSendState.DONT_SEND) {
                             // Give the information directly so that we can release
                             // mNotificationLock.
@@ -10142,7 +10149,7 @@ public class NotificationManagerService extends SystemService {
         // We can't use record.isIntercepted(). That setting is based on the foreground user.
         if (DBG) Slog.d(TAG, "processing DND state");
         final CensoredSendState dndState =
-                mZenModeHelper.getCensoredSendStateFromUserDndOnVisuals(record, userId);
+                mZenModeHelper.getCensoredSendStateFromUserDndOnVisuals(record);
         switch (dndState) {
             case SEND_QUIET:
                 if (DBG) Slog.d(TAG, "dndState is SEND_QUIET");

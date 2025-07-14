@@ -284,6 +284,10 @@ public class ZenModeFiltering {
             return;
         }
 
+        if (record.mIsProcessingForCensoredNotif) {
+            return;
+        }
+
         // add a note to the reason indicating whether it's new or updated
         String annotatedReason = reason;
         if (!record.hasInterceptBeenSet()) {

@@ -3200,7 +3200,11 @@ public class ZenModeConfig implements Parcelable {
         return !secondaryText.equals("") ? secondaryText : null;
     }
 
-    private static long parseAutomaticRuleEndTime(Context context, Uri id) {
+    // class is a @hide class
+    /**
+     * @hide
+     */
+    public static long parseAutomaticRuleEndTime(Context context, Uri id) {
         if (isValidEventConditionId(id)) {
             // cannot look up end times for events
             return Long.MAX_VALUE;

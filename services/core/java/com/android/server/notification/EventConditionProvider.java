@@ -52,7 +52,7 @@ import java.util.List;
  */
 public class EventConditionProvider extends SystemConditionProviderService {
     private static final String TAG = "ConditionProviders.ECP";
-    private static final boolean DEBUG = Log.isLoggable("ConditionProviders", Log.DEBUG);
+    private static final boolean DEBUG = true; // Log.isLoggable("ConditionProviders", Log.DEBUG);
 
     private static final String NOT_SHOWN = "...";
     private static final String SIMPLE_NAME = EventConditionProvider.class.getSimpleName();
@@ -339,7 +339,7 @@ public class EventConditionProvider extends SystemConditionProviderService {
         return pendingIntent;
     }
 
-    private Condition createCondition(Uri id, int state) {
+    static Condition createCondition(Uri id, int state) {
         final String summary = NOT_SHOWN;
         final String line1 = NOT_SHOWN;
         final String line2 = NOT_SHOWN;
@@ -362,7 +362,7 @@ public class EventConditionProvider extends SystemConditionProviderService {
         }
     }
 
-    private static Context getContextForUser(Context context, UserHandle user) {
+    static Context getContextForUser(Context context, UserHandle user) {
         try {
             return context.createPackageContextAsUser(context.getPackageName(), 0, user);
         } catch (NameNotFoundException e) {

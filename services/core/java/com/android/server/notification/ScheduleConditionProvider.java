@@ -274,7 +274,7 @@ public class ScheduleConditionProvider extends SystemConditionProviderService {
         }
     }
 
-    private Condition createCondition(Uri id, int state, String reason) {
+    static Condition createCondition(Uri id, int state, String reason) {
         if (DEBUG) Slog.d(TAG, "notifyCondition " + id
                 + " " + Condition.stateToString(state)
                 + " reason=" + reason);
