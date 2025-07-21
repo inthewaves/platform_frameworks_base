@@ -10213,8 +10213,7 @@ public class NotificationManagerService extends SystemService {
         }
 
         // Handles lockdown button.
-        final int strongAuthFlags = new LockPatternUtils(getContext()).getStrongAuthForUser(userId);
-        if ((strongAuthFlags & LockPatternUtils.StrongAuthTracker.STRONG_AUTH_REQUIRED_AFTER_USER_LOCKDOWN) != 0) {
+        if (mStrongAuthTracker.isInLockDownMode(userId)) {
             if (DBG) Slog.d(TAG, "shouldShowNotificationOnKeyguardForUser: user in lockdown");
             return false;
         }
