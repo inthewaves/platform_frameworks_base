@@ -368,12 +368,6 @@ public class ZenModeHelper {
             // from #computeZenMode.
             isZenModeFromManualConfig = true;
             zenMode = config.manualRule.zenMode;
-            if (zenMode == Global.ZEN_MODE_OFF) {
-                // zenMode won't be changed again anyway, so it won't be intercepted. Send normally
-                // to avoid constructing a consolidated policy.
-                Slog.d(TAG, "GOS-DEBUG: getCensoredSendState: manual and off");
-                return CensoredSendState.SEND_NORMAL;
-            }
 
             // From the mConfig.isManualActive() branch in the method
             // #updateAndApplyConsolidatedPolicyAndDeviceEffects
@@ -388,8 +382,8 @@ public class ZenModeHelper {
         final NotificationManager.Policy policy;
         final long now = System.currentTimeMillis();
         if (userInfo == null || now >= userInfo.nextAutomaticRuleCheckTime) {
-            policy = fetchAndCacheBgUserInfoAndCreatePolicy(config, now, user, zenPolicy,
-                    isZenModeFromManualConfig, zenMode);
+            policy = fetchAndCacheBgUserInfoAndCreateNotificationPolicy(config, now, user,
+                    zenPolicy, isZenModeFromManualConfig, zenMode);
         } else {
             Slog.d(TAG, "GOS-DEBUG: using cached policy / zenmode ");
             if (!isZenModeFromManualConfig
@@ -425,7 +419,7 @@ public class ZenModeHelper {
     }
 
     @NonNull
-    private Policy fetchAndCacheBgUserInfoAndCreatePolicy(final ZenModeConfig config,
+    private Policy fetchAndCacheBgUserInfoAndCreateNotificationPolicy(final ZenModeConfig config,
             final long now, final UserHandle user, final ZenPolicy zenPolicy,
             final boolean isZenModeFromManualConfig, int zenMode) {
         Slog.d(TAG, "GOS-DEBUG: getCensoredSendState: shouldRetrieve");
