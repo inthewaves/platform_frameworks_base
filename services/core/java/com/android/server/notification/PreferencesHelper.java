@@ -3248,6 +3248,7 @@ public class PreferencesHelper implements RankingConfig {
         }
 
         int index = mLockScreenShowNotifications.indexOfKey(userId);
+        Slog.d(TAG, "GOS-DEBUG: canShowNotificationsOnLockscreen=" + mLockScreenShowNotifications);
         // the previous implementation never inserted new keys for userIds that were missing,
         // resulting in this always returning true
         if (index < 0) {

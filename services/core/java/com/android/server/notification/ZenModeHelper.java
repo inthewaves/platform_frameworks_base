@@ -379,6 +379,14 @@ public class ZenModeHelper {
         return CensoredSendState.SEND_NORMAL;
     }
 
+    /**
+     * Since this is being called on every notification in a background user that opts in, we also
+     * want to be able to cache results.
+     *
+     * @param user A background user
+     * @return The background user's consolidated policy, updated for their intended zen state.
+     * If null, then their ZenModeConfig is missing.
+     */
     @Nullable
     private AutomaticRuleUserInfo fetchBgUserInfo(final UserHandle user) {
         AutomaticRuleUserInfo userInfo;
@@ -407,6 +415,13 @@ public class ZenModeHelper {
         int zenMode = Global.ZEN_MODE_OFF;
         boolean isZenModeFromManualConfig = false;
 
+        // Cannot use
+        //      mConditions.evaluateConfig(config, null, true);
+        // to make ConditionProvider subscriptions for background users, as condition providers are
+        // not designed for background users. Easiest alternative is to evaluate the conditions
+        // ourselves and only make updates lazily when the lowest timestamp of a mode change has
+        // passed
+
         if (config.manualRule != null) {
             // Condition updates are not done for background users, e.g. you can see the manual
             // Do Not Disturb to end im 30 min, etc., so the condition will need to be updated 30m
@@ -429,7 +444,6 @@ public class ZenModeHelper {
             applyCustomPolicy(config, zenPolicy, config.manualRule, true);
         }
 
-        // mConditions.evaluateConfig(config, null, false);
         for (ZenRule automaticRule : config.automaticRules.values()) {
             if (!automaticRule.enabled) {
                 // Although this is checked in ZenRule#isActive, check this early so that we can
@@ -444,7 +458,8 @@ public class ZenModeHelper {
                     "GOS-DEBUG: automatic rule id " + automaticRule.id
                             + " condition is " + automaticRule.condition);
 
-            // Condition updates are not done for background users
+            // Condition updates are not done for background users, so we need to update it
+            // ourselves.
             minimumCheckTime = updateRuleCondition(now, user, automaticRule, minimumCheckTime);
 
             // This is apparently how automatic rules are parsed in computeZenMode and 
@@ -461,7 +476,8 @@ public class ZenModeHelper {
 
                 // From #computeZenMode:
                 // Don't update the zenMode if manual config was active. This is because in 
-                // computeZenMode, the method returns the manual ZenMode early
+                // computeZenMode, the method returns early on manual rule's zenmode if the manual
+                // rule is active.
                 if (!isZenModeFromManualConfig
                         && zenSeverity(automaticRule.zenMode) > zenSeverity(zenMode)) {
                     Slog.d(TAG, "GOS-DEBUG: from auto policy, setting zenmode to " + automaticRule.zenMode);
@@ -484,11 +500,16 @@ public class ZenModeHelper {
     }
 
     /**
+     * <p>
      * ZenRule#isActive checks the `condition`. However, modes in AOSP are only designed to
      * work with the current user. Schedule and event modes do not update when a user is in
      * the background. We thus must do this ourselves by updating the condition of the
      * rule in order for isActive to reflect the user state.
      *
+     * <p>Much of the logic is taken from ConditionProvider code, e.g.
+     * {@link ScheduleConditionProvider}, {@link EventConditionProvider},
+     * {@link CountdownConditionProvider}. The methods in the ConditionProviders can't be used
+     * directly, as it's usually tied to the current user, and refactoring might be more invasive.
      *
      * @param now Current timestamp
      * @param user Current user
@@ -498,6 +519,10 @@ public class ZenModeHelper {
      */
     private long updateRuleCondition(final long now, final UserHandle user,
             @NonNull final ZenRule rule, long minimumCheckTime) {
+        if (!rule.enabled) {
+            return minimumCheckTime;
+        }
+
         // This will call tryParseScheduleConditionId and exit early if not valid schedule condition
         var sched = ZenModeConfig.toScheduleCalendar(rule.conditionId);
         if (sched != null) {
@@ -507,18 +532,19 @@ public class ZenModeHelper {
             if (endTime > 0) minimumCheckTime = Math.min(minimumCheckTime, endTime);
 
             var isInSched = sched.isInSchedule(now);
+            final Condition newCondition;
             if (isInSched) {
                 if (sched.shouldExitForAlarm(now)) {
-                    rule.condition = ScheduleConditionProvider.createCondition(
+                    newCondition = ScheduleConditionProvider.createCondition(
                             rule.conditionId, Condition.STATE_FALSE,
                             "alarmCanceled");
                 } else {
-                    rule.condition = ScheduleConditionProvider.createCondition(
+                    newCondition = ScheduleConditionProvider.createCondition(
                             rule.conditionId, Condition.STATE_TRUE,
                             "meetsSchedule");
                 }
             } else {
-                rule.condition = ScheduleConditionProvider.createCondition(
+                newCondition = ScheduleConditionProvider.createCondition(
                         rule.conditionId, Condition.STATE_FALSE,
                         "!meetsSchedule");
             }
@@ -527,6 +553,7 @@ public class ZenModeHelper {
                             + " isInSched " + isInSched
                             + " endTime " + endTime
                             + " isActive " + rule.isActive());
+            applyConditionAndReconsiderOverride(rule, newCondition, ZenModeConfig.ORIGIN_SYSTEM);
             return minimumCheckTime;
         }
 
@@ -576,8 +603,10 @@ public class ZenModeHelper {
                 } else {
                     conditionState = STATE_FALSE;
                 }
-                rule.condition = EventConditionProvider.createCondition(
+                final Condition newCondition = EventConditionProvider.createCondition(
                         rule.conditionId, conditionState);
+                applyConditionAndReconsiderOverride(rule, newCondition,
+                        ZenModeConfig.ORIGIN_SYSTEM);
             } else {
                 Slog.w(TAG, "Unable to create context for user " + user.getIdentifier());
             }
@@ -592,8 +621,10 @@ public class ZenModeHelper {
             if (now >= countdown) {
                 final boolean isAlarm = ZenModeConfig.isValidCountdownToAlarmConditionId(
                         rule.conditionId);
-                rule.condition = CountdownConditionProvider.newCondition(
+                final Condition newCondition = CountdownConditionProvider.newCondition(
                         now, isAlarm, Condition.STATE_FALSE);
+                applyConditionAndReconsiderOverride(rule, newCondition,
+                        ZenModeConfig.ORIGIN_SYSTEM);
             }
             return minimumCheckTime;
         }
