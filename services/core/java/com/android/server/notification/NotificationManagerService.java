@@ -10104,7 +10104,8 @@ public class NotificationManagerService extends SystemService {
         }
 
         // Handles cases where the notification being sent is a censored notification itself.
-        if (SystemNotificationChannels.OTHER_USERS.equals(record.getChannel().getId())) {
+        if (SystemNotificationChannels.OTHER_USERS.equals(record.getChannel().getId()) &&
+                getForwardedNotificationPackage().equals(record.getSbn().getPackageName())) {
             if (DBG) Slog.d(TAG, "not sending censored notif due to original being " +
                     "censored notification itself");
             return CensoredSendState.DONT_SEND;
@@ -10229,6 +10230,10 @@ public class NotificationManagerService extends SystemService {
         }
 
         return true;
+    }
+
+    private String getForwardedNotificationPackage() {
+        return getContext().getPackageName();
     }
 
     /**
@@ -10361,7 +10366,8 @@ public class NotificationManagerService extends SystemService {
             }
 
             final int currentUserId = ActivityManager.getCurrentUser();
-            enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
+            final String forwardedNotifSenderPkg = getForwardedNotificationPackage();
+            enqueueNotificationInternal(forwardedNotifSenderPkg, forwardedNotifSenderPkg,
                     MY_UID, MY_PID, createCensoredNotificationTag(originalUserId, pkg, originalTag),
                     notificationId, censoredNotification, currentUserId, false, false);
 
@@ -10379,7 +10385,7 @@ public class NotificationManagerService extends SystemService {
                             .setShowWhen(true)
                             .build();
 
-            enqueueNotificationInternal(getContext().getPackageName(), getContext().getPackageName(),
+            enqueueNotificationInternal(forwardedNotifSenderPkg, forwardedNotifSenderPkg,
                     MY_UID, MY_PID, createCensoredSummaryTag(originalUserId), notificationSummaryId,
                     censoredNotificationSummary, currentUserId, false, false);
         }
