@@ -3243,7 +3243,23 @@ public class PreferencesHelper implements RankingConfig {
         if (mLockScreenShowNotifications == null) {
             mLockScreenShowNotifications = new SparseBooleanArray();
         }
-        return mLockScreenShowNotifications.get(userId, true);
+        if (userId == UserHandle.USER_ALL) {
+            return true;
+        }
+
+        int index = mLockScreenShowNotifications.indexOfKey(userId);
+        // the previous implementation never inserted new keys for userIds that were missing,
+        // resulting in this always returning true
+        if (index < 0) {
+            // use a default value of 1 to reflect the original default value of true from previous
+            // implementation
+            final boolean newValue = Settings.Secure.getIntForUser(mContext.getContentResolver(),
+                    Settings.Secure.LOCK_SCREEN_SHOW_NOTIFICATIONS, 1, userId) != 0;
+            mLockScreenShowNotifications.put(userId, newValue);
+            index = mLockScreenShowNotifications.indexOfKey(userId);
+        }
+        // original: return mLockScreenShowNotifications.get(userId, true);
+        return mLockScreenShowNotifications.valueAt(index);
     }
 
     @Override
@@ -3251,7 +3267,23 @@ public class PreferencesHelper implements RankingConfig {
         if (mLockScreenPrivateNotifications == null) {
             mLockScreenPrivateNotifications = new SparseBooleanArray();
         }
-        return mLockScreenPrivateNotifications.get(userId, true);
+        if (userId == UserHandle.USER_ALL) {
+            return true;
+        }
+
+        int index = mLockScreenPrivateNotifications.indexOfKey(userId);
+        // the previous implementation never inserted new keys for userIds that were missing,
+        // resulting in this always returning true
+        if (index < 0) {
+            // use a default value of 1 to reflect the original default value of true from previous
+            // implementation
+            final boolean newValue = Settings.Secure.getIntForUser(mContext.getContentResolver(),
+                    Settings.Secure.LOCK_SCREEN_ALLOW_PRIVATE_NOTIFICATIONS, 1, userId) != 0;
+            mLockScreenPrivateNotifications.put(userId, newValue);
+            index = mLockScreenPrivateNotifications.indexOfKey(userId);
+        }
+        // original: return mLockScreenPrivateNotifications.get(userId, true);
+        return mLockScreenPrivateNotifications.valueAt(index);
     }
 
     public void unlockAllNotificationChannels() {
