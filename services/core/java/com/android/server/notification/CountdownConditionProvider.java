@@ -152,7 +152,7 @@ public class CountdownConditionProvider extends SystemConditionProviderService {
         }
     }
 
-    private static final Condition newCondition(long time, boolean alarm, int state) {
+    static final Condition newCondition(long time, boolean alarm, int state) {
         return new Condition(ZenModeConfig.toCountdownConditionId(time, alarm),
                 "", "", "", 0, state,Condition.FLAG_RELEVANT_NOW);
     }

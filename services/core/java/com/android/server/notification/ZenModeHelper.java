@@ -285,14 +285,14 @@ public class ZenModeHelper {
     private final SparseArray<AutomaticRuleUserInfo> mBgUserInfo = new SparseArray<>();
 
     private record AutomaticRuleUserInfo(
-            long nextAutomaticRuleCheckTime,
+            long nextRuleCheckTime,
             int zenMode,
-            NotificationManager.Policy policy
+            @NonNull NotificationManager.Policy policy
     ) {
         @Override
         public String toString() {
             return "AutomaticRuleUserInfo{" +
-                    "nextAutomaticRuleCheckTime=" + nextAutomaticRuleCheckTime +
+                    "nextRuleCheckTime=" + nextRuleCheckTime +
                     ", zenMode=" + zenMode +
                     ", policy=" + policy +
                     '}';
@@ -351,57 +351,18 @@ public class ZenModeHelper {
     CensoredSendState getCensoredSendStateFromUserDndOnVisuals(NotificationRecord record) {
         Slog.d(TAG, "GOS-DEBUG: modesUi flag is " + Flags.modesUi());
         final UserHandle user = record.getUser();
-        final ZenModeConfig config = getConfigCopyForUser(user);
-        if (config == null) {
-            Slog.d(TAG, "GOS-DEBUG: getCensoredSendState: config is null");
-            return CensoredSendState.SEND_NORMAL;
-        }
-
-        // We create the consolidated policy for the user, and simultaneously compute the zen mode.
-        // The structure is derived from the other methods (see doc comment).
-        final ZenPolicy zenPolicy = new ZenPolicy();
-        int zenMode = Global.ZEN_MODE_OFF;
-        boolean isZenModeFromManualConfig = false;
-        if (config.isManualActive()) {
-            // Don't replace the zen mode anymore. This mirrors the line
-            // `if (mConfig.isManualActive()) return mConfig.manualRule.zenMode;`
-            // from #computeZenMode.
-            isZenModeFromManualConfig = true;
-            zenMode = config.manualRule.zenMode;
-
-            // From the mConfig.isManualActive() branch in the method
-            // #updateAndApplyConsolidatedPolicyAndDeviceEffects
-            applyCustomPolicy(config, zenPolicy, config.manualRule, true);
-        }
 
         // Profiles should've been filtered out beforehand
-        final AutomaticRuleUserInfo userInfo;
-        synchronized (mBgUserInfo) {
-            userInfo = mBgUserInfo.get(user.getIdentifier());
-        }
-        final NotificationManager.Policy policy;
-        final long now = System.currentTimeMillis();
-        if (userInfo == null || now >= userInfo.nextAutomaticRuleCheckTime) {
-            policy = fetchAndCacheBgUserInfoAndCreateNotificationPolicy(config, now, user,
-                    zenPolicy, isZenModeFromManualConfig, zenMode);
-        } else {
-            Slog.d(TAG, "GOS-DEBUG: using cached policy / zenmode ");
-            if (!isZenModeFromManualConfig
-                    && zenSeverity(userInfo.zenMode) > zenSeverity(zenMode)) {
-                zenMode = userInfo.zenMode;
-            }
-            policy = userInfo.policy;
-        }
-        Slog.d(TAG, "GOS-DEBUG: policy suppressed effects: " + policy.suppressedVisualEffects);
+        final AutomaticRuleUserInfo userInfo = fetchBgUserInfo(user);
 
-        if (zenMode == Global.ZEN_MODE_OFF) {
+        if (userInfo == null || userInfo.zenMode == Global.ZEN_MODE_OFF) {
             Slog.d(TAG, "GOS-DEBUG: off after automatic rule check");
             return CensoredSendState.SEND_NORMAL;
         }
 
-        if (mFiltering.shouldIntercept(zenMode, policy, record)) {
+        if (mFiltering.shouldIntercept(userInfo.zenMode, userInfo.policy, record)) {
             // Here, notification does not bypass DND
-            if (policy.showInNotificationList()) {
+            if (userInfo.policy.showInNotificationList()) {
                 // The active DND / modes doesn't hide notifications from notification shade, so
                 // user B will get muted censored notifications
                 Slog.d(TAG, "GOS-DEBUG: quiet send");
@@ -418,18 +379,62 @@ public class ZenModeHelper {
         return CensoredSendState.SEND_NORMAL;
     }
 
-    @NonNull
-    private Policy fetchAndCacheBgUserInfoAndCreateNotificationPolicy(final ZenModeConfig config,
-            final long now, final UserHandle user, final ZenPolicy zenPolicy,
-            final boolean isZenModeFromManualConfig, int zenMode) {
+    @Nullable
+    private AutomaticRuleUserInfo fetchBgUserInfo(final UserHandle user) {
+        AutomaticRuleUserInfo userInfo;
+        synchronized (mBgUserInfo) {
+            userInfo = mBgUserInfo.get(user.getIdentifier());
+        }
+        final long now = System.currentTimeMillis();
+        if (userInfo != null && now < userInfo.nextRuleCheckTime) {
+            return userInfo;
+        }
+
         Slog.d(TAG, "GOS-DEBUG: getCensoredSendState: shouldRetrieve");
+        final ZenModeConfig config = getConfigCopyForUser(user);
+        if (config == null) {
+            Slog.d(TAG, "fetchAndCacheBgUserInfo: missing config for user " + user);
+            return null;
+        }
 
         long minimumCheckTime = Long.MAX_VALUE;
+
+        // The manual config can be cached, because it's unlikely that the manual config can be
+        // changed.
+        // We create the consolidated policy for the user, and simultaneously compute the zen mode.
+        // The structure is derived from the other methods (see doc comment).
+        final ZenPolicy zenPolicy = new ZenPolicy();
+        int zenMode = Global.ZEN_MODE_OFF;
+        boolean isZenModeFromManualConfig = false;
+
+        if (config.manualRule != null) {
+            // Condition updates are not done for background users, e.g. you can see the manual
+            // Do Not Disturb to end im 30 min, etc., so the condition will need to be updated 30m
+            // from now. If the background user is not moved to foreground, the condition will never
+            // update, since AOSP designed modes to only work for the current user.
+            //
+            // This can affect the return value of config.isManualActive() below.
+            minimumCheckTime = updateRuleCondition(now, user, config.manualRule, minimumCheckTime);
+        }
+
+        if (config.isManualActive()) {
+            // Don't replace the zen mode anymore. This mirrors the line
+            // `if (mConfig.isManualActive()) return mConfig.manualRule.zenMode;`
+            // from #computeZenMode.
+            isZenModeFromManualConfig = true;
+            zenMode = config.manualRule.zenMode;
+
+            // From the mConfig.isManualActive() branch in the method
+            // #updateAndApplyConsolidatedPolicyAndDeviceEffects
+            applyCustomPolicy(config, zenPolicy, config.manualRule, true);
+        }
+
         // mConditions.evaluateConfig(config, null, false);
         for (ZenRule automaticRule : config.automaticRules.values()) {
             if (!automaticRule.enabled) {
                 // Although this is checked in ZenRule#isActive, check this early so that we can
-                // avoid doing the checks below.
+                // avoid updating rule condiiton below. !automaticRule.enabled is an early condition 
+                // for automaticRule.isActive() to return false
                 Slog.d(TAG,
                         "GOS-DEBUG: automatic rule id " + automaticRule.id
                                 + " skipped because not enabled");
@@ -439,25 +444,24 @@ public class ZenModeHelper {
                     "GOS-DEBUG: automatic rule id " + automaticRule.id
                             + " condition is " + automaticRule.condition);
 
-            // ZenRule#isActive checks the `condition`. However, modes in AOSP are only designed to
-            // work with the current user. Schedule and event modes do not update when a user is in
-            // the background. We thus must do this ourselves by updating the condition of the
-            // automatic rule.
+            // Condition updates are not done for background users
             minimumCheckTime = updateRuleCondition(now, user, automaticRule, minimumCheckTime);
 
-            // This is apparently how automatic rules are parsed in computeZenMode.
+            // This is apparently how automatic rules are parsed in computeZenMode and 
+            // updateAndApplyConsolidatedPolicyAndDeviceEffects.
             if (automaticRule.isActive()) {
                 Slog.d(TAG, "GOS-DEBUG: Entered isActive branch");
                 // From #updateAndApplyConsolidatedPolicyAndDeviceEffects:
                 // Note that we may still potentially apply these automatic rules even if manual
-                // is active
+                // is active.
                 if (automaticRule.zenMode != Global.ZEN_MODE_OFF) {
                     Slog.d(TAG, "GOS-DEBUG: applyCustomPolicy");
                     applyCustomPolicy(config, zenPolicy, automaticRule, false);
                 }
 
                 // From #computeZenMode:
-                // Don't update the zenMode if manual config was active.
+                // Don't update the zenMode if manual config was active. This is because in 
+                // computeZenMode, the method returns the manual ZenMode early
                 if (!isZenModeFromManualConfig
                         && zenSeverity(automaticRule.zenMode) > zenSeverity(zenMode)) {
                     Slog.d(TAG, "GOS-DEBUG: from auto policy, setting zenmode to " + automaticRule.zenMode);
@@ -470,108 +474,130 @@ public class ZenModeHelper {
             minimumCheckTime = 0;
         }
 
-        Policy policy = config.toNotificationPolicy(zenPolicy);
+        final Policy policy = config.toNotificationPolicy(zenPolicy);
+        var info = new AutomaticRuleUserInfo(minimumCheckTime, zenMode, policy);
+        Slog.d(TAG, "GOS-DEBUG: storing bg user info " + info + ", now=" + now);
         synchronized (mBgUserInfo) {
-            var info = new AutomaticRuleUserInfo(minimumCheckTime, zenMode, policy);
-            Slog.d(TAG, "GOS-DEBUG: storing bg user info " + info);
             mBgUserInfo.put(user.getIdentifier(), info);
         }
-        return policy;
+        return info;
     }
 
+    /**
+     * ZenRule#isActive checks the `condition`. However, modes in AOSP are only designed to
+     * work with the current user. Schedule and event modes do not update when a user is in
+     * the background. We thus must do this ourselves by updating the condition of the
+     * rule in order for isActive to reflect the user state.
+     *
+     *
+     * @param now Current timestamp
+     * @param user Current user
+     * @param rule The rule
+     * @param minimumCheckTime Previous min check time
+     * @return Next minimum check time
+     */
     private long updateRuleCondition(final long now, final UserHandle user,
-            final ZenRule automaticRule, long minimumCheckTime) {
-        var sched = ZenModeConfig.toScheduleCalendar(automaticRule.conditionId);
+            @NonNull final ZenRule rule, long minimumCheckTime) {
+        // This will call tryParseScheduleConditionId and exit early if not valid schedule condition
+        var sched = ZenModeConfig.toScheduleCalendar(rule.conditionId);
         if (sched != null) {
             // See ScheduleConditionProvider#evaluateSubscriptionLocked
             long endTime = ZenModeConfig.parseAutomaticRuleEndTime(
-                    mContext, automaticRule.conditionId);
+                    mContext, rule.conditionId);
             if (endTime > 0) minimumCheckTime = Math.min(minimumCheckTime, endTime);
 
             var isInSched = sched.isInSchedule(now);
             if (isInSched) {
                 if (sched.shouldExitForAlarm(now)) {
-                    automaticRule.condition = ScheduleConditionProvider.createCondition(
-                            automaticRule.conditionId, Condition.STATE_FALSE,
+                    rule.condition = ScheduleConditionProvider.createCondition(
+                            rule.conditionId, Condition.STATE_FALSE,
                             "alarmCanceled");
                 } else {
-                    automaticRule.condition = ScheduleConditionProvider.createCondition(
-                            automaticRule.conditionId, Condition.STATE_TRUE,
+                    rule.condition = ScheduleConditionProvider.createCondition(
+                            rule.conditionId, Condition.STATE_TRUE,
                             "meetsSchedule");
                 }
             } else {
-                automaticRule.condition = ScheduleConditionProvider.createCondition(
-                        automaticRule.conditionId, Condition.STATE_FALSE,
+                rule.condition = ScheduleConditionProvider.createCondition(
+                        rule.conditionId, Condition.STATE_FALSE,
                         "!meetsSchedule");
             }
             Slog.d(TAG,
-                    "GOS-DEBUG: automatic rule id " + automaticRule.id
+                    "GOS-DEBUG: automatic rule id " + rule.id
                             + " isInSched " + isInSched
                             + " endTime " + endTime
-                            + " isActive " + automaticRule.isActive());
+                            + " isActive " + rule.isActive());
+            return minimumCheckTime;
+        }
 
-        } else {
-            // See EventConditionProvider#evaluateSubscriptionsW
-            Slog.d(TAG, "GOS-DEBUG: parsing event?");
-            final ZenModeConfig.EventInfo event =
-                    ZenModeConfig.tryParseEventConditionId(automaticRule.conditionId);
+        // See EventConditionProvider#evaluateSubscriptionsW
+        Slog.d(TAG, "GOS-DEBUG: parsing event?");
+        final ZenModeConfig.EventInfo event =
+                ZenModeConfig.tryParseEventConditionId(rule.conditionId);
+        if (event != null) {
+            Slog.d(TAG, "GOS-DEBUG: parsing event " + event.calendarId + ", cal name " + event.calName);
+            final Context context = user.isSystem()
+                    ? mContext : EventConditionProvider.getContextForUser(mContext, user);
+            if (context != null) {
+                var tracker = new CalendarTracker(mContext, context);
+                final CalendarTracker.CheckEventResult result;
+                if (event.calName == null) { // any calendar
+                    // event could exist on any tracker
+                    result = tracker.checkEvent(event, now);
+                } else {
+                    // event should exist on one tracker
 
-            if (event != null) {
-                Slog.d(TAG, "GOS-DEBUG: parsing event " + event.calendarId + ", cal name " + event.calName);
-                final Context context = user.isSystem()
-                        ? mContext : EventConditionProvider.getContextForUser(mContext,
-                        user);
-                if (context != null) {
-                    var tracker = new CalendarTracker(mContext, context);
-                    final CalendarTracker.CheckEventResult result;
-                    if (event.calName == null) { // any calendar
-                        // event could exist on any tracker
+                    // based on resolveUserId but using the intended user
+                    if (event.userId == UserHandle.USER_NULL
+                            || event.userId == user.getIdentifier()) {
                         result = tracker.checkEvent(event, now);
                     } else {
-                        // event should exist on one tracker
+                        Slog.w(TAG, "event.userId="
+                                + event.userId
+                                + " doesn't match with target "
+                                + user.getIdentifier());
+                        result = null;
+                    }
+                }
 
-                        // based on resolveUserId but using the intended user
-                        if (event.userId == UserHandle.USER_NULL
-                                || event.userId == user.getIdentifier()) {
-                            result = tracker.checkEvent(event, now);
-                        } else {
-                            Slog.w(TAG, "event.userId="
-                                    + event.userId
-                                    + " doesn't match with target "
-                                    + user.getIdentifier());
-                            result = null;
-                        }
+                final int conditionState;
+                if (result != null) {
+                    if (result.recheckAt > 0) {
+                        minimumCheckTime = Math.min(minimumCheckTime, result.recheckAt);
                     }
 
-                    if (result != null) {
-                        if (result.recheckAt > 0) {
-                            minimumCheckTime = Math.min(minimumCheckTime, result.recheckAt);
-                        }
-
-                        if (result.inEvent) {
-                            Slog.d(TAG, " inEvent");
-                            automaticRule.condition = EventConditionProvider.createCondition(
-                                    automaticRule.conditionId, Condition.STATE_TRUE);
-                        } else {
-                            Slog.d(TAG, " not inEvent");
-                            automaticRule.condition = EventConditionProvider.createCondition(
-                                    automaticRule.conditionId, Condition.STATE_FALSE);
-                        }
+                    if (result.inEvent) {
+                        Slog.d(TAG, " inEvent");
+                        conditionState = Condition.STATE_TRUE;
                     } else {
-                        automaticRule.condition = EventConditionProvider.createCondition(
-                                automaticRule.conditionId, Condition.STATE_FALSE);
+                        Slog.d(TAG, " not inEvent");
+                        conditionState = STATE_FALSE;
                     }
                 } else {
-                    Slog.w(TAG, "Unable to create context for user " + user.getIdentifier());
+                    conditionState = STATE_FALSE;
                 }
+                rule.condition = EventConditionProvider.createCondition(
+                        rule.conditionId, conditionState);
             } else {
-                automaticRule.condition = EventConditionProvider.createCondition(
-                        automaticRule.conditionId, Condition.STATE_FALSE);
+                Slog.w(TAG, "Unable to create context for user " + user.getIdentifier());
             }
-            Slog.d(TAG,
-                    "GOS-DEBUG: else branch automatic rule id " + automaticRule.id
-                            + " isActive " + automaticRule.isActive());
+            return minimumCheckTime;
         }
+
+        final long countdown = ZenModeConfig.tryParseCountdownConditionId(rule.conditionId);
+        if (countdown > 0) {
+            Slog.d(TAG, "GOS-DEBUG: countdown condition in updateRuleCondition is " + countdown);
+            minimumCheckTime = Math.min(minimumCheckTime, countdown);
+            // See CountdownConditionProvider
+            if (now >= countdown) {
+                final boolean isAlarm = ZenModeConfig.isValidCountdownToAlarmConditionId(
+                        rule.conditionId);
+                rule.condition = CountdownConditionProvider.newCondition(
+                        now, isAlarm, Condition.STATE_FALSE);
+            }
+            return minimumCheckTime;
+        }
+
         return minimumCheckTime;
     }
 
