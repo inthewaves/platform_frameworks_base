@@ -10204,13 +10204,14 @@ public class NotificationManagerService extends SystemService {
             return false;
         }
 
-        final boolean showByUser = Settings.Secure.getIntForUser(getContext().getContentResolver(),
-                Settings.Secure.LOCK_SCREEN_SHOW_NOTIFICATIONS, 0, userId) != 0;
+        final boolean showByUser = mPreferencesHelper.canShowNotificationsOnLockscreen(userId);
         if (!showByUser) {
             if (DBG) Slog.d(TAG, "shouldShowNotificationOnKeyguardForUser: " +
                     "LOCK_SCREEN_SHOW_NOTIFICATIONS is false");
             return false;
         }
+
+        // Note: Not checking DevicePolicyManager.KEYGUARD_DISABLE_SECURE_NOTIFICATIONS...
 
         // Handles lockdown button.
         if (mStrongAuthTracker.isInLockDownMode(userId)) {
