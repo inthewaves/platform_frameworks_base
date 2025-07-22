@@ -259,6 +259,7 @@ import android.content.pm.UserInfo;
 import android.content.pm.VersionedPackage;
 import android.content.res.Resources;
 import android.database.ContentObserver;
+import android.ext.settings.ExtSettings;
 import android.metrics.LogMaker;
 import android.net.Uri;
 import android.os.Binder;
@@ -10083,9 +10084,8 @@ public class NotificationManagerService extends SystemService {
         }
 
         // Sending user has to opt in under Multiple users in Settings.
-        final boolean userEnabledCensoredSending = Settings.Secure.getIntForUser(
-                getContext().getContentResolver(),
-                Settings.Secure.SEND_CENSORED_NOTIFICATIONS_TO_CURRENT_USER, 0, userId) != 0;
+        final boolean userEnabledCensoredSending =
+                ExtSettings.SEND_CENSORED_NOTIFICATIONS_TO_CURRENT_USER.get(getContext(), userId);
         if (!userEnabledCensoredSending) {
             if (DBG) Slog.d(TAG, "not sending censored notif due to sender setting off");
             return CensoredSendState.DONT_SEND;
