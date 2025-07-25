@@ -3,6 +3,8 @@ package com.android.internal.gmscompat.flags;
 import android.app.compat.gms.GmsCompat;
 import android.content.Intent;
 import android.ext.PackageId;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.ArrayMap;
 import android.util.Log;
@@ -17,15 +19,30 @@ public class PhenotypeFlags {
 
     public static final String ACTION_COMMITTED = "com.google.android.gms.phenotype.COMMITTED";
 
-    public static void applyOverrides(GmsCompatConfig config) {
+    public static void applyOverrides(GmsCompatConfig config, boolean sendDelete) {
         ArrayMap<String, ArrayMap<String, GmsFlag>> packageFlagMap = config.flags;
 
-        var deleteIntent = new Intent("com.google.android.gms.phenotype.FLAG_OVERRIDE");
-        deleteIntent.setPackage(PackageId.GMS_CORE_NAME);
-        deleteIntent.putExtra("action", "delete");
-        Log.d(TAG, "sending delete overrides broadcast");
-        GmsCompat.appContext().sendBroadcast(deleteIntent);
+        if (sendDelete && false) {
+            var deleteIntent = new Intent("com.google.android.gms.phenotype.FLAG_OVERRIDE");
+            deleteIntent.setPackage(PackageId.GMS_CORE_NAME);
+            deleteIntent.putExtra("action", "delete");
+            Log.d(TAG, "sending delete overrides broadcast");
+            GmsCompat.appContext().sendBroadcast(deleteIntent);
 
+            // TODO: Still an issue since advanced protection flag is read early during boot
+            //  intent, so the in-between state of the overrides being deleted and the overrides
+            //  being sent can result in the non-overridden value being read for the advanced protection
+            //  activity component enabled state.
+            new Handler(Looper.getMainLooper())
+                    .postDelayed(() -> sendFlagOverrideBroadcast(packageFlagMap), 100);
+        } else {
+            Log.d(TAG, "skipping delete overrides broadcast");
+            sendFlagOverrideBroadcast(packageFlagMap);
+        }
+    }
+
+    private static void sendFlagOverrideBroadcast(
+            ArrayMap<String, ArrayMap<String, GmsFlag>> packageFlagMap) {
         for (int packageIdx = 0; packageIdx < packageFlagMap.size(); ++packageIdx) {
             Collection<GmsFlag> configFlags = packageFlagMap.valueAt(packageIdx).values();
             var overridenFlags = new ArrayList<GmsFlag>(configFlags.size());

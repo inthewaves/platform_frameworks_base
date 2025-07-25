@@ -44,7 +44,7 @@ class BinderGca2Gms extends IGca2Gms.Stub {
             notifyForceDefaultFlagsChanged(phenotypeDb, GmsHooks.config());
         }
 
-        GmsFlagOverrides.applyOverrides();
+        GmsFlagOverrides.applyOverrides(true);
     }
 
     private static void notifyForceDefaultFlagsChanged(SQLiteOpenHelper phenotypeDb, GmsCompatConfig newConfig) {

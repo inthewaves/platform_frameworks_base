@@ -37,7 +37,7 @@ public class GmsFlagOverrides {
                     receivedPhenotypeCommittedBroadcast = true;
                 }
                 Log.d(TAG, "received " + intent);
-                applyOverrides();
+                applyOverrides(true);
             }
         };
         // Most phenotype flags and all Gservices flags are stored on user-encrypted storage,
@@ -48,12 +48,14 @@ public class GmsFlagOverrides {
         filter.addAction(PhenotypeFlags.ACTION_COMMITTED);
         ctx.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
 
-        applyOverrides();
+        // Avoid sending delete broadcast on init, as another delete will be sent by
+        // a broadcast later. Appears to be some race conditions in GMS
+        applyOverrides(false);
     }
 
-    public static void applyOverrides() {
+    public static void applyOverrides(boolean sendDelete) {
         GmsCompatConfig config = GmsHooks.config();
         GservicesFlags.applyOverrides(config);
-        PhenotypeFlags.applyOverrides(config);
+        PhenotypeFlags.applyOverrides(config, sendDelete);
     }
 }
