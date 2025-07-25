@@ -102,6 +102,8 @@ import java.io.PrintWriter;
 import java.io.Serializable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -9340,6 +9342,81 @@ public class Intent implements Parcelable, Cloneable {
         mLaunchToken = launchToken;
     }
 
+    private static boolean isCalledFrom(String targetClassName, String targetMethodName) {
+        StackTraceElement[] stackTraceElements = Thread.currentThread().getStackTrace();
+
+        // stackTraceElements[0] is Thread.getStackTrace
+        // stackTraceElements[1] is this method (isCalledFrom)
+        // Thus we start from i = 2
+        for (int i = 2; i < stackTraceElements.length; i++) {
+            StackTraceElement element = stackTraceElements[i];
+            String currentClassName = element.getClassName();
+            String currentMethodName = element.getMethodName();
+
+            if (currentClassName.equals(targetClassName) ||
+                    currentClassName.endsWith("." + targetClassName)) {
+                if (currentMethodName.equals(targetMethodName)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static long lastLogTimeMillis = 0;
+
+    private void getFlagValue() {
+        var appCtx = GmsCompat.appContext();
+        String LOG_TAG = "GmcIntent";
+        if (appCtx == null) {
+            return;
+        }
+        final long now = System.currentTimeMillis();
+        if (Log.isLoggable(LOG_TAG, Log.VERBOSE)) {
+            if (now - lastLogTimeMillis < 100) {
+                return;
+            }
+        } else if (Log.isLoggable(LOG_TAG, Log.DEBUG)) {
+            if (!isCalledFrom("vyz", "run")) {
+                return;
+            }
+        } else {
+            return;
+        }
+        lastLogTimeMillis = now;
+
+        // Obtains the value of the flag
+        // [com.google.android.gms.advancedprotection#com.google.android.gms]
+        // 45673629
+        final ClassLoader loader = appCtx.getClassLoader();
+        String className = "hijv";
+        try {
+            Class<?> hijvClass = Class.forName(className, false, loader);
+            // the `c` method is defined as
+            //     return a.ml().c();
+            // so ensure the static field `a` is present
+            Field staticFieldA = hijvClass.getDeclaredField("a");
+            staticFieldA.setAccessible(true);
+            if (staticFieldA.get(null) == null) {
+                Log.d(LOG_TAG, "Failed to retrieve 'hijv.a'");
+                return;
+            }
+
+            Method staticMethodC = hijvClass.getDeclaredMethod("c");
+            staticMethodC.setAccessible(true);
+            Object result = staticMethodC.invoke(null);
+
+            if (result instanceof Boolean x) {
+                Log.d(LOG_TAG, "hijv.a.c() [advancedprotection flag 45673629] == " + x + " on Intent " + mAction + " (" + mExtras + ")");
+            } else {
+                Log.d(LOG_TAG, "method 'c()' not returning bool; actual type: " +
+                        (result != null ? result.getClass().getName() : "null"));
+            }
+        } catch (Throwable e) {
+            Log.e(LOG_TAG, "getFlagValue: error", e);
+        }
+    }
+
     /**
      * Sets the ClassLoader that will be used when unmarshalling
      * any Parcelable values from the extras of this Intent.
@@ -9348,6 +9425,12 @@ public class Intent implements Parcelable, Cloneable {
      * at the time of unmarshalling.
      */
     public void setExtrasClassLoader(@Nullable ClassLoader loader) {
+        // setExtrasClassLoader is called before advanced portection activiies are disabled or
+        // enabled, but also for a lot of other intent-related operations
+        if (GmsCompat.isGmsCore()) {
+            getFlagValue();
+        }
+
         if (mExtras != null) {
             mExtras.setClassLoader(loader);
         }

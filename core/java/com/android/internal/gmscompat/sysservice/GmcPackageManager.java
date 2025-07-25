@@ -51,6 +51,8 @@ import com.android.internal.gmscompat.GmsHooks;
 import com.android.internal.gmscompat.GmsInfo;
 import com.android.internal.gmscompat.PlayStoreHooks;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -598,9 +600,55 @@ public class GmcPackageManager extends ApplicationPackageManager {
         return true;
     }
 
+    private void getFlagValue() {
+        var appCtx = GmsCompat.appContext();
+        if (appCtx == null) {
+            return;
+        }
+
+        // Obtains the value of the flag
+        // [com.google.android.gms.advancedprotection#com.google.android.gms]
+        // 45673629
+        final ClassLoader loader = appCtx.getClassLoader();
+        String className = "hijv";
+        try {
+            Class<?> hijvClass = Class.forName(className, false, loader);
+            // the `c` method is defined as
+            //     return a.ml().c();
+            // so ensure the static field `a` is present
+            Field staticFieldA = hijvClass.getDeclaredField("a");
+            staticFieldA.setAccessible(true);
+            if (staticFieldA.get(null) == null) {
+                Log.d(TAG, "Failed to retrieve 'hijv.a'");
+                return;
+            }
+
+            Method staticMethodC = hijvClass.getDeclaredMethod("c");
+            staticMethodC.setAccessible(true);
+            Object result = staticMethodC.invoke(null);
+
+            if (result instanceof Boolean x) {
+                Log.d(TAG, "hijv.a.c() [advancedprotection flag 45673629] == " + x + " on setComponentEnabled");
+            } else {
+                Log.d(TAG, "method 'c()' not returning bool; actual type: " +
+                        (result != null ? result.getClass().getName() : "null"));
+            }
+        } catch (Throwable e) {
+            Log.e(TAG, "getFlagValue: error", e);
+        }
+    }
+
     @Override
     public void setComponentEnabledSetting(ComponentName componentName,
                                            int newState, int flags) {
+        if (GmsCompat.isGmsCore() && componentName != null) {
+            if ("com.google.android.gms.advancedprotection.ui.AdvancedProtectionDialogActivity".equals(componentName.getClassName())
+                    || "com.google.android.gms.advancedprotection.ui.AdvancedProtectionSettingsActivity".equals(componentName.getClassName())) {
+                Log.d(TAG, "advancedprotection: setComponentEnabledSetting(" + componentName + ", " + newState + ")", new Throwable());
+                getFlagValue();
+            }
+        }
+
         if (!isSetComponentEnabledSettingAllowed(componentName, newState, flags)) {
             return;
         }
