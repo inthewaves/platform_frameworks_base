@@ -36,6 +36,7 @@ import android.content.pm.InstallSourceInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.pm.SharedLibraryInfo;
 import android.content.pm.VersionedPackage;
 import android.ext.PackageId;
@@ -715,5 +716,21 @@ public class GmcPackageManager extends ApplicationPackageManager {
         } catch (NameNotFoundException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    @Override
+    public ResolveInfo resolveActivity(Intent intent, int flags) {
+        if (GmsCompat.isGmsCore()) {
+            var component = intent.getComponent();
+            var aapmActivity = "com.google.android.gms.advancedprotection.ui.AdvancedProtectionSettingsActivity";
+            if (component != null && PackageId.GMS_CORE_NAME.equals(component.getPackageName())
+                    && aapmActivity.equals(component.getClassName())
+                    && (intent.getFlags() & Intent.FLAG_ACTIVITY_NEW_TASK) != 0
+                    && componentsWithForcedEnabledSetting.contains(component)) {
+                Log.d(TAG, "resolveActivity: adding disable components match", new Throwable());
+                flags |= MATCH_DISABLED_COMPONENTS;
+            }
+        }
+        return super.resolveActivity(intent, flags);
     }
 }
