@@ -21,8 +21,8 @@ public class PhenotypeFlags {
 
     public static void applyOverrides(GmsCompatConfig config, boolean sendDelete) {
         ArrayMap<String, ArrayMap<String, GmsFlag>> packageFlagMap = config.flags;
-
-        if (sendDelete && false) {
+        final boolean forceOffByTag = Log.isLoggable(TAG, Log.VERBOSE);
+        if (sendDelete && !forceOffByTag) {
             var deleteIntent = new Intent("com.google.android.gms.phenotype.FLAG_OVERRIDE");
             deleteIntent.setPackage(PackageId.GMS_CORE_NAME);
             deleteIntent.putExtra("action", "delete");
@@ -31,12 +31,17 @@ public class PhenotypeFlags {
 
             // TODO: Still an issue since advanced protection flag is read early during boot
             //  intent, so the in-between state of the overrides being deleted and the overrides
-            //  being sent can result in the non-overridden value being read for the advanced protection
-            //  activity component enabled state.
-            new Handler(Looper.getMainLooper())
-                    .postDelayed(() -> sendFlagOverrideBroadcast(packageFlagMap), 100);
+            //  being sent can result in the non-overridden value being read for the advanced
+            //  protection activity component enabled state.
+            final boolean sendDelayed = Log.isLoggable(TAG + "Delay", Log.VERBOSE);
+            if (sendDelayed) {
+                new Handler(Looper.getMainLooper())
+                        .postDelayed(() -> sendFlagOverrideBroadcast(packageFlagMap), 500);
+            } else {
+                sendFlagOverrideBroadcast(packageFlagMap);
+            }
         } else {
-            Log.d(TAG, "skipping delete overrides broadcast");
+            Log.d(TAG, "skipping delete overrides broadcast (forceOffByTag = " + forceOffByTag + ")");
             sendFlagOverrideBroadcast(packageFlagMap);
         }
     }

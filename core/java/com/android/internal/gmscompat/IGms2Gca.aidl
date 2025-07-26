@@ -47,4 +47,7 @@ interface IGms2Gca {
     Notification getMediaProjectionNotification();
 
     void raisePackageToForeground(String targetPkg, long durationMs, @nullable String reason, int reasonCode);
+
+    long getLastSeenConfigVersion();
+    oneway void setLastSeenConfigVersion(long lastSeenVersion);
 }

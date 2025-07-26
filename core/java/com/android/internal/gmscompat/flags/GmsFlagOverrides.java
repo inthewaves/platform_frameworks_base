@@ -5,8 +5,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.ext.PackageId;
+import android.os.RemoteException;
 import android.util.Log;
 
+import com.android.internal.gmscompat.GmsCompatApp;
 import com.android.internal.gmscompat.GmsCompatConfig;
 import com.android.internal.gmscompat.GmsHooks;
 
@@ -15,7 +17,15 @@ import java.util.Arrays;
 public class GmsFlagOverrides {
     private static final String TAG = "GmsFlagOverrides";
 
+    private static long lastSeenVersion;
+
     public static void init(Context ctx) {
+        try {
+            lastSeenVersion = GmsCompatApp.iGms2Gca().getLastSeenConfigVersion();
+        } catch (RemoteException e) {
+            throw GmsCompatApp.callFailed(e);
+        }
+
         Arrays.asListHook = (Object[] arr) -> {
             if (arr.length == 2 && "com.google.android.apps.internal.mobdog".equals(arr[0]) && "com.google.android.apps.mobileutilities".equals(arr[1])) {
                 String[] replacement = new String[] { (String) arr[0], (String) arr[1], PackageId.GMS_CORE_NAME, };
@@ -53,9 +63,23 @@ public class GmsFlagOverrides {
         applyOverrides(false);
     }
 
-    public static void applyOverrides(boolean sendDelete) {
+    public static void applyOverrides(boolean shouldDelete) {
         GmsCompatConfig config = GmsHooks.config();
         GservicesFlags.applyOverrides(config);
-        PhenotypeFlags.applyOverrides(config, sendDelete);
+        Log.d(TAG, "lastAppliedVersion=" + lastSeenVersion + ", config.version=" + config.version);
+        final boolean forceOnByTag = Log.isLoggable(TAG+"Delete", Log.VERBOSE);
+        final boolean sendDelete = forceOnByTag || (shouldDelete && lastSeenVersion != config.version);
+        if (sendDelete) {
+            lastSeenVersion = config.version;
+            try {
+                GmsCompatApp.iGms2Gca().setLastSeenConfigVersion(config.version);
+            } catch (RemoteException e) {
+                throw GmsCompatApp.callFailed(e);
+            }
+            PhenotypeFlags.applyOverrides(config, true);
+        } else {
+            PhenotypeFlags.applyOverrides(config, false);
+        }
+
     }
 }
