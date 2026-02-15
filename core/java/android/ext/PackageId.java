@@ -52,8 +52,8 @@ public interface PackageId {
     String PIXEL_HEALTH_NAME = "com.google.android.apps.pixel.health";
     int PIXEL_HEALTH = 13;
 
-    /** @hide */ String BUGLE_NAME = "com.google.android.apps.messaging";
-    /** @hide */ int BUGLE = 14;
+    String BUGLE_NAME = "com.google.android.apps.messaging";
+    int BUGLE = 14;
 
     /** @hide */ String SYSTEM_KEYBOARD = "com.android.inputmethod.latin";
 }
