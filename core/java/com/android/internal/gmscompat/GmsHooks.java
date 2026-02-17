@@ -17,6 +17,7 @@
 package com.android.internal.gmscompat;
 
 import android.Manifest;
+import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -37,7 +38,9 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.ext.PackageId;
 import android.net.Uri;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.DeadSystemRuntimeException;
 import android.os.IBinder;
@@ -62,6 +65,7 @@ import com.android.internal.gmscompat.gcarriersettings.GCarrierSettingsApp;
 import com.android.internal.gmscompat.gcarriersettings.TestCarrierConfigService;
 import com.android.internal.gmscompat.sysservice.GmcPackageManager;
 
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -670,6 +674,127 @@ public final class GmsHooks {
         tlPermissionsToSpoof.set(null);
         // invalidate the cache of permission state inside GmsCore
         GmcPackageManager.notifyPermissionsChangeListeners();
+    }
+
+    public static final String GMS_CONSTELLATION_SERVICE_INTERFACE_DESCRIPTOR =
+            "com.google.android.gms.constellation.internal.IConstellationApiService";
+
+    /** Imported from android.app.appsearch.safeparcel.SafeParcelReader */
+    private static class SafeParcelReader {
+        private static void throwParseException(
+                @NonNull String message, @NonNull Parcel p) throws ParseException {
+            throw new ParseException(message
+                    + " Parcel: pos=" + p.dataPosition() + " size=" + p.dataSize(), p.dataPosition());
+        }
+
+        private static final int OBJECT_HEADER = 0x00004f45;
+
+        public static int readHeader(@NonNull Parcel p) {
+            return p.readInt();
+        }
+
+        public static int getFieldId(int header) {
+            return header & 0x0000ffff;
+        }
+
+        public static int readSize(@NonNull Parcel p, int header) {
+            if ((header & 0xffff0000) != 0xffff0000) {
+                return (header >> 16) & 0x0000ffff;
+            } else {
+                return p.readInt();
+            }
+        }
+
+        /** Skips the unknown field. */
+        public static void skipUnknownField(@NonNull Parcel p, int header) {
+            int size = readSize(p, header);
+            p.setDataPosition(p.dataPosition() + size);
+        }
+
+        /**
+         * Returns the end position of the object in the parcel.
+         */
+        public static int validateObjectHeader(@NonNull Parcel p) throws ParseException {
+            final int header = readHeader(p);
+            final int size = readSize(p, header);
+            final int start = p.dataPosition();
+            if (getFieldId(header) != OBJECT_HEADER) {
+                throwParseException(
+                        "Expected object header. Got 0x" + Integer.toHexString(header), p);
+            }
+            final int end = start + size;
+            if (end < start || end > p.dataSize()) {
+                throwParseException("Size read is invalid start=" + start + " end=" + end, p);
+            }
+            return end;
+        }
+
+        @Nullable
+        public static String createString(@NonNull Parcel p, int header) {
+            final int size = readSize(p, header);
+            final int pos = p.dataPosition();
+            if (size == 0) {
+                return null;
+            }
+            final String result = p.readString();
+            p.setDataPosition(pos + size);
+            return result;
+        }
+    }
+
+    public static void onBeginGmsConstellationServiceCall(int transactionCode, Parcel data) {
+        if (transactionCode != 3) { // verifyPhoneNumber V2 method
+            return;
+        }
+
+        try {
+            final var ctx = GmsCompat.appContext();
+            if (ctx == null) return;
+            final var callingPkg = ctx.getPackageManager().getNameForUid(Binder.getCallingUid());
+            // Ensure we're only sending RCS permission notifications for Bugle phone number
+            // verification attempts.
+            //
+            // GmsServiceBroker also does validation of allowed packages, but it doesn't seem it's
+            // restricted to only Bugle. For the Constellation service (155), the
+            // VerifyPhoneNumberApi__packages_allowed_to_call flag (proto list) also includes other
+            // apps like com.google.android.dialer, etc. in its default value.
+            if (!PackageId.BUGLE_NAME.equals(callingPkg)) {
+                Log.d(TAG, "onBeginGmsConstellationServiceCall code " + transactionCode + ", unexpected callingPkg " + callingPkg);
+                return;
+            }
+
+            data.enforceInterface(GMS_CONSTELLATION_SERVICE_INTERFACE_DESCRIPTOR);
+            // IConstellationCallbacks binder
+            data.readStrongBinder();
+
+            if (data.readInt() == 1) { // VerifyPhoneNumberRequest is present
+                final int end = SafeParcelReader.validateObjectHeader(data);
+                while (data.dataPosition() < end) {
+                    final int fieldHeader = SafeParcelReader.readHeader(data);
+                    if (SafeParcelReader.getFieldId(fieldHeader) == 0x1) {
+                        // Known TS43 UPI policies as of 20250119:
+                        // upi-carrier-tos-ts43 and upi-ts43-only
+                        final String policyId = SafeParcelReader.createString(data, fieldHeader);
+                        final boolean isTs43Verification = policyId != null &&
+                                policyId.startsWith("upi-") &&
+                                policyId.contains("ts43");
+                        Log.d(TAG, "onBeginGmsConstellationServiceCall: policyId " + policyId);
+                        // We could also decode the Bundle field in VerifyPhoneNumberRequest which
+                        // stores the key-value "required_consumer_consent" -> "RCS", and check
+                        // for this
+                        GmsCompatApp.iGms2Gca()
+                                .maybeShowRcsRequirementsNotification(isTs43Verification);
+                        return;
+                    } else {
+                        SafeParcelReader.skipUnknownField(data, fieldHeader);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "onBeginGmsConstellationServiceCall: failed", e);
+        } finally {
+            data.setDataPosition(0);
+        }
     }
 
     public static IBinder maybeOverrideBinder(IBinder binder) {
