@@ -45,6 +45,7 @@ import android.os.Bundle;
 import android.os.DeadSystemRuntimeException;
 import android.os.IBinder;
 import android.os.Parcel;
+import android.os.Parcelable;
 import android.os.PowerExemptionManager;
 import android.os.Process;
 import android.os.RemoteException;
@@ -680,7 +681,7 @@ public final class GmsHooks {
             "com.google.android.gms.constellation.internal.IConstellationApiService";
 
     /** Imported from android.app.appsearch.safeparcel.SafeParcelReader */
-    private static class SafeParcelReader {
+    static class SafeParcelReader {
         private static void throwParseException(
                 @NonNull String message, @NonNull Parcel p) throws ParseException {
             throw new ParseException(message
@@ -702,6 +703,22 @@ public final class GmsHooks {
                 return (header >> 16) & 0x0000ffff;
             } else {
                 return p.readInt();
+            }
+        }
+
+        private static void readAndEnforceSize(@NonNull Parcel p, int header, int required)
+                throws ParseException {
+            final int size = readSize(p, header);
+            if (size != required) {
+                throw new ParseException(
+                        "Expected size "
+                                + required
+                                + " got "
+                                + size
+                                + " (0x"
+                                + Integer.toHexString(size)
+                                + ")",
+                        p.dataPosition());
             }
         }
 
@@ -729,6 +746,11 @@ public final class GmsHooks {
             return end;
         }
 
+        public static int readInt(@NonNull Parcel p, int header) throws ParseException {
+            readAndEnforceSize(p, header, 4);
+            return p.readInt();
+        }
+
         @Nullable
         public static String createString(@NonNull Parcel p, int header) {
             final int size = readSize(p, header);
@@ -737,6 +759,19 @@ public final class GmsHooks {
                 return null;
             }
             final String result = p.readString();
+            p.setDataPosition(pos + size);
+            return result;
+        }
+
+        @Nullable
+        public static <T> T[] createTypedArray(
+                @NonNull Parcel p, int header, @NonNull Parcelable.Creator<T> c) {
+            final int size = readSize(p, header);
+            final int pos = p.dataPosition();
+            if (size == 0) {
+                return null;
+            }
+            final T[] result = p.createTypedArray(c);
             p.setDataPosition(pos + size);
             return result;
         }
@@ -787,6 +822,90 @@ public final class GmsHooks {
                         return;
                     } else {
                         SafeParcelReader.skipUnknownField(data, fieldHeader);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "onBeginGmsConstellationServiceCall: failed", e);
+        } finally {
+            data.setDataPosition(0);
+        }
+    }
+
+    public static final String GMS_CONSTELLATION_CALLBACKS_INTERFACE_DESCRIPTOR =
+            "com.google.android.gms.constellation.internal.IConstellationCallbacks";
+
+    record PhoneNumberVerification(String phoneNumber, int verificationMethod, int verificationStatus) {}
+
+    private final static class PhoneNumberVerificationCreator implements Parcelable.Creator<PhoneNumberVerification> {
+        @Override
+        public PhoneNumberVerification createFromParcel(Parcel source) {
+            String phoneNumber = null;
+            int verificationMethod = 0;
+            int verificationStatus = 0;
+            try {
+                final int end = SafeParcelReader.validateObjectHeader(source);
+                while (source.dataPosition() < end) {
+                    final int fieldHeader = SafeParcelReader.readHeader(source);
+                    switch (SafeParcelReader.getFieldId(fieldHeader)) {
+                        case 1:
+                            phoneNumber = SafeParcelReader.createString(source, fieldHeader);
+                            break;
+                        case 3:
+                            verificationMethod = SafeParcelReader.readInt(source, fieldHeader);
+                            break;
+                        case 7:
+                            verificationStatus = SafeParcelReader.readInt(source, fieldHeader);
+                            break;
+                        default:
+                            SafeParcelReader.skipUnknownField(source, fieldHeader);
+                            break;
+                    }
+                }
+            } catch (Exception e) {
+                Log.d(TAG, "Failed to parse PhoneNumberVerification");
+            }
+            return new PhoneNumberVerification(phoneNumber, verificationMethod, verificationStatus);
+        }
+
+        @Override
+        public PhoneNumberVerification[] newArray(int size) {
+            return new PhoneNumberVerification[size];
+        }
+    }
+
+    public static void onBeginGmsConstellationCallbacksCall(int transactionCode, Parcel data) {
+        if (transactionCode != 2) { // onPhoneNumberVerificationsCompleted method
+            return;
+        }
+
+        try {
+            Log.d(TAG, "onBeginGmsConstellationCallbacksCall: PackageId " + GmsCompat.getCurrentPackageId());
+            data.enforceInterface(GMS_CONSTELLATION_CALLBACKS_INTERFACE_DESCRIPTOR);
+            // Status
+            if (data.readInt() == 1) {
+                final int end = SafeParcelReader.validateObjectHeader(data);
+                data.setDataPosition(end);
+            }
+            if (data.readInt() == 1) { // VerifyPhoneNumberResponse is present
+                final int end = SafeParcelReader.validateObjectHeader(data);
+                final Parcelable.Creator<PhoneNumberVerification> creator =
+                        new PhoneNumberVerificationCreator();
+                while (data.dataPosition() < end) {
+                    final int header = SafeParcelReader.readHeader(data);
+                    if (SafeParcelReader.getFieldId(header) == 1) {
+                        PhoneNumberVerification[] arr = SafeParcelReader.createTypedArray(data,
+                                header, creator);
+                        if (arr == null) {
+                            Log.d(TAG, "error: null array");
+                            return;
+                        }
+
+                        for (var verification : arr) {
+                            Log.d(TAG, "onBeginGmsConstellationCallbacksCall: phone " + verification.phoneNumber + ", status " + verification.verificationStatus + ", method " + verification.verificationMethod);
+                        }
+                    } else {
+                        SafeParcelReader.skipUnknownField(data, header);
                     }
                 }
             }

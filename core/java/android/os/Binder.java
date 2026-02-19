@@ -771,9 +771,11 @@ public class Binder implements IBinder {
             mIsGmsServiceBroker = GmsHooks.GMS_SERVICE_BROKER_INTERFACE_DESCRIPTOR.equals(descriptor);
             mIsGmsConstellationService = GmsHooks.GMS_CONSTELLATION_SERVICE_INTERFACE_DESCRIPTOR.equals(descriptor);
         }
+        mIsIConstellationCallbacks = GmsHooks.GMS_CONSTELLATION_CALLBACKS_INTERFACE_DESCRIPTOR.equals(descriptor);
     }
 
     private boolean mIsIGmsCallbacks;
+    private boolean mIsIConstellationCallbacks;
     private boolean mIsGmsServiceBroker;
     private boolean mIsGmsConstellationService;
 
@@ -1500,6 +1502,8 @@ public class Binder implements IBinder {
                 onBeginGmsServiceBrokerCallRet = GmsHooks.onBeginGmsServiceBrokerCall(code, data);
             } else if (mIsGmsConstellationService) {
                 GmsHooks.onBeginGmsConstellationServiceCall(code, data);
+            } else if (mIsIConstellationCallbacks) {
+                GmsHooks.onBeginGmsConstellationCallbacksCall(code, data);
             }
             // TODO(b/299356201) - this logic should not be in Java - it should be in native
             // code in libbinder so that it works for all binder users.
