@@ -85,6 +85,11 @@ public final class GmsCompat {
     }
 
     /** @hide */
+    public static boolean isBugle() {
+        return curPackageId == PackageId.BUGLE;
+    }
+
+    /** @hide */
     public static int getCurrentPackageId() {
         return curPackageId;
     }

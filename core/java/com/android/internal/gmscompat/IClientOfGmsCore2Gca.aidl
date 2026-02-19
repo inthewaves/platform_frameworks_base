@@ -15,4 +15,6 @@ interface IClientOfGmsCore2Gca {
     oneway void showPlayIntegrityNotification(String pkgName, boolean isBlocked);
 
     oneway void onGoogleIdCredentialOptionInit();
+
+    oneway void maybeShowRcsRequirementsNotification(String callerPkg, boolean isTs43Verification);
 }

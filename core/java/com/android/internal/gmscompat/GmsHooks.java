@@ -817,8 +817,8 @@ public final class GmsHooks {
                         // We could also decode the Bundle field in VerifyPhoneNumberRequest which
                         // stores the key-value "required_consumer_consent" -> "RCS", and check
                         // for this
-                        GmsCompatApp.iGms2Gca()
-                                .maybeShowRcsRequirementsNotification(isTs43Verification);
+                        //GmsCompatApp.iGms2Gca()
+                        //        .maybeShowRcsRequirementsNotification(isTs43Verification);
                         return;
                     } else {
                         SafeParcelReader.skipUnknownField(data, fieldHeader);
@@ -835,7 +835,8 @@ public final class GmsHooks {
     public static final String GMS_CONSTELLATION_CALLBACKS_INTERFACE_DESCRIPTOR =
             "com.google.android.gms.constellation.internal.IConstellationCallbacks";
 
-    record PhoneNumberVerification(String phoneNumber, int verificationMethod, int verificationStatus) {}
+    record PhoneNumberVerification(
+            @Nullable String verifiedPhoneNumber, int verificationMethod, int verificationStatus) {}
 
     private final static class PhoneNumberVerificationCreator implements Parcelable.Creator<PhoneNumberVerification> {
         @Override
@@ -875,6 +876,10 @@ public final class GmsHooks {
     }
 
     public static void onBeginGmsConstellationCallbacksCall(int transactionCode, Parcel data) {
+        if (!GmsCompat.isBugle()) {
+            return;
+        }
+
         if (transactionCode != 2) { // onPhoneNumberVerificationsCompleted method
             return;
         }
@@ -901,8 +906,50 @@ public final class GmsHooks {
                             return;
                         }
 
+                        boolean failedAnyTs43Verification = false;
+                        boolean hasAnyFailures = false;
                         for (var verification : arr) {
-                            Log.d(TAG, "onBeginGmsConstellationCallbacksCall: phone " + verification.phoneNumber + ", status " + verification.verificationStatus + ", method " + verification.verificationMethod);
+                            Log.d(TAG, "onBeginGmsConstellationCallbacksCall: "
+                                    + "phone " + verification.verifiedPhoneNumber
+                                    + ", status " + verification.verificationStatus
+                                    + ", method " + verification.verificationMethod);
+                            // These are set where "Handling onSuccessV2()" is printed in
+                            // com.google.android.gms.constellation.EventManager. It sets the
+                            // verification method in a Bundle as "verification_method" key, and
+                            // then the api_verify_phone_operation / VerifyPhoneNumber
+                            // AsyncOperation possibly maps them for the callback.
+                            //
+                            // See the EnumMap for api_verify_phone_operation. It maps the challenge
+                            // type enums:
+                            // UNKNOWN -> 0, MO_SMS -> 1. MT_SMS -> 2. CARRIER_ID -> 3,
+                            // IMSI_LOOKUP -> 5. REGISTERED_SMS -> 7. FLASH_CALL -> 8, TS43 -> 9
+                            // FIXME: This is not being set by GMSwhen it fails... e.g. with ICC
+                            //  auth toggle off.
+                            boolean isTs43Verification = verification.verificationMethod == 9;
+                            // This is determined by the "result" integer key set in
+                            // constellation.EventManager.
+                            // The EnumMap in the Constellation verification_manager has these
+                            // mappings for the "result" integer Bundle key:
+                            // UNKNOWN_REASON -> 0, THROTTLED -> 3, FAILED -> 2. SKIPPED -> 4
+                            // NOT_REQUIRED -> 5, PHONE_NUMBER_ENTRY_REQUIRED -> 7, INELIGIBLE -> 8
+                            // DENIED -> 9, NOT_IN_SERVICE -> 10
+                            // Not listed in the EnumMap (maybe inlined) are 6 for pending
+                            // and 1 for success.
+                            boolean isSuccess = verification.verificationStatus == 1;
+                            if (!hasAnyFailures) {
+                                hasAnyFailures = !isSuccess;
+                            }
+                            if (isTs43Verification && !isSuccess) {
+                                failedAnyTs43Verification = true;
+                            }
+                        }
+
+                        if (hasAnyFailures) {
+                            GmsCompatApp.iClientOfGmsCore2Gca()
+                                    .maybeShowRcsRequirementsNotification(
+                                            PackageId.BUGLE_NAME,
+                                            failedAnyTs43Verification
+                                    );
                         }
                     } else {
                         SafeParcelReader.skipUnknownField(data, header);
@@ -910,7 +957,7 @@ public final class GmsHooks {
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "onBeginGmsConstellationServiceCall: failed", e);
+            Log.e(TAG, "onBeginGmsConstellationCallbacksCall: failed", e);
         } finally {
             data.setDataPosition(0);
         }
