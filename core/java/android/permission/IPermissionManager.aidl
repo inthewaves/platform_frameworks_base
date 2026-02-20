@@ -112,6 +112,8 @@ interface IPermissionManager {
     int getPermissionRequestState(String packageName, String permissionName, int deviceId);
 
     void updatePermissionState(String packageName, int userId);
+
+    void updatePermissionStateAndInvalidateCache(String packageName, int userId);
 }
 
 /**
