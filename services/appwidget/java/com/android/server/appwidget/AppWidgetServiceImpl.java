@@ -3951,10 +3951,19 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
             if (className != null) {
                 var cn = new ComponentName(providerId.componentName.getPackageName(),
                         className);
-                if (pm.resolveActivity(new Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).setComponent(cn), 0) != null) {
-                    info.configure = cn;
-                } else {
-                    Slog.d(TAG, "ignoring invalid configuration activity: " + cn.toShortString());
+                try {
+                    final int userId = UserHandle.getUserId(providerId.uid);
+                    if (pm.resolveActivityAsUser(
+                            new Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).setComponent(
+                                    cn), 0, userId) != null) {
+                        info.configure = cn;
+                    } else {
+                        Slog.d(TAG,
+                                "ignoring invalid configuration activity: " + cn.toShortString());
+                    }
+                } catch (SecurityException e) {
+                    Slog.d(TAG,
+                            "ignoring invalid configuration activity: " + cn.toShortString(), e);
                 }
             }
             info.label = activityInfo.loadLabel(pm).toString();
