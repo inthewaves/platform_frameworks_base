@@ -3949,8 +3949,26 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
             String className = sa
                     .getString(com.android.internal.R.styleable.AppWidgetProviderInfo_configure);
             if (className != null) {
-                info.configure = new ComponentName(providerId.componentName.getPackageName(),
+                var cn = new ComponentName(providerId.componentName.getPackageName(),
                         className);
+                final int userId = UserHandle.getUserId(providerId.uid);
+                try {
+                    if (pm.resolveActivityAsUser(
+                            new Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).setComponent(
+                                    cn), 0, userId) != null) {
+                        info.configure = cn;
+                    } else {
+                        Slog.d(TAG,
+                                "ignoring invalid configuration activity: " + cn.toShortString() + ", source", providerId.source);
+                    }
+                } catch (SecurityException e) {
+                    Slog.e(TAG,
+                            "bad invalid configuration activity: " + cn.toShortString()
+                                    + ", callingUid " + Binder.getCallingUid()
+                                    + ", providerId.uid " + providerId.uid + ", source", providerId.source);
+                    Slog.d(TAG, "original exception", e);
+                    throw e;
+                }
             }
             info.label = activityInfo.loadLabel(pm).toString();
             info.icon = activityInfo.getIconResource();
@@ -6325,10 +6343,12 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
     static final class ProviderId {
         final int uid;
         final ComponentName componentName;
+        final Throwable source;
 
         ProviderId(int uid, ComponentName componentName) {
             this.uid = uid;
             this.componentName = componentName;
+            source = new Throwable();
         }
 
         public UserHandle getProfile() {
