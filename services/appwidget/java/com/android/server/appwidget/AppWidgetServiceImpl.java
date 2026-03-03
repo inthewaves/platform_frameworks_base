@@ -1140,6 +1140,8 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         ensureGroupStateLoadedLocked(userId, /* enforceUserUnlockingOrUnlocked */ true );
     }
 
+    private String mLastLog = null;
+
     /**
      * Load widgets/providers/hosts for the specified user and all of its enabled
      * child profiles from disk if not already loaded.
@@ -1161,9 +1163,12 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         }
         final int[] profileIds = mSecurityPolicy.getEnabledGroupProfileIds(userId);
         if (profileIds != null) {
-            Slog.d(TAG,
-                    "GOS-DEBUG: ensureGroupStateLoadedLocked userId " + userId + " has profileIds "
-                            + Arrays.stream(profileIds).boxed().toList());
+            String lineToLog = "GOS-DEBUG: ensureGroupStateLoadedLocked userId " + userId + " has profileIds "
+                    + Arrays.stream(profileIds).boxed().toList();
+            if (!lineToLog.equals(mLastLog)) {
+                mLastLog = lineToLog;
+                Slog.d(TAG, lineToLog);
+            }
         } else {
             Slog.d(TAG,
                     "GOS-DEBUG: ensureGroupStateLoadedLocked userId " + userId + " has no profileIds");
@@ -3480,7 +3485,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         final int activityUid = ri.activityInfo.applicationInfo.uid;
         final int userIdFromProvider = UserHandle.getUserId(activityUid);
         if (userIdFromProvider != UserHandle.getUserId(Binder.getCallingUid())) {
-            Slog.d(TAG, "GOS-DEBUG: addProviderLocked: for activityInfo " + ri.activityInfo.packageName
+            Slog.w(TAG, "GOS-DEBUG: addProviderLocked: for activityInfo " + ri.activityInfo.packageName
                     + " " + ri.activityInfo.packageName + " is for uid " + activityUid + " but callingUid is " + Binder.getCallingUid());
         }
 
