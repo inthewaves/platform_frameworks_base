@@ -1157,11 +1157,21 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                     "Profile " + userId + " must have unlocked parent");
         }
         final int[] profileIds = mSecurityPolicy.getEnabledGroupProfileIds(userId);
+        if (profileIds != null) {
+            Slog.d(TAG,
+                    "GOS-DEBUG: ensureGroupStateLoadedLocked userId " + userId + " has profileIds "
+                            + Arrays.stream(profileIds).boxed().toList());
+        } else {
+            Slog.d(TAG,
+                    "GOS-DEBUG: ensureGroupStateLoadedLocked userId " + userId + " has no profileIds");
+        }
 
         IntArray newIds = new IntArray(1);
         for (int profileId : profileIds) {
             if (!mLoadedUserIds.get(profileId)) {
                 mLoadedUserIds.put(profileId, true);
+                Slog.d(TAG,
+                            "GOS-DEBUG: ensureGroupStateLoadedLocked userId " + userId + " has newId " + profileId);
                 newIds.add(profileId);
             }
         }
@@ -2673,7 +2683,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         final int userId = UserHandle.getCallingUserId();
         final int callingUid = Binder.getCallingUid();
 
-        if (DEBUG) {
+        if (true || DEBUG) {
             Slog.i(TAG, "getInstalledProvidersForProfiles() " + userId);
         }
 
@@ -3431,11 +3441,25 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                 if (allReceivers == null) {
                     allReceivers = new ArrayList<>();
                 }
+
+                var list = receivers.stream()
+                        .map((ri) -> ri.activityInfo != null ? ri.activityInfo.getComponentName().toShortString() + ", uid " + ri.activityInfo.applicationInfo.uid : ri.getComponentInfo() + " nonActivity")
+                        .toList();
+                Slog.d(TAG, "GOS-DEBUG: loadGroupWidgetProvidersLocked profileId " + profileId + " loaded these activity infos " + list);
+
                 allReceivers.addAll(receivers);
             }
         }
 
         final int N = (allReceivers == null) ? 0 : allReceivers.size();
+        List<Integer> profileIdList = Arrays.stream(profileIds).boxed().toList();
+        Slog.d(TAG, "GOS-DEBUG: loadGroupWidgetProvidersLocked with profileIds " + profileIdList);
+        if (allReceivers != null) {
+            var list = allReceivers.stream()
+                    .map((ri) -> ri.activityInfo != null ? ri.activityInfo.getComponentName().toShortString() + ", uid " + ri.activityInfo.applicationInfo.uid : ri.getComponentInfo() + " nonActivity")
+                    .toList();
+            Slog.d(TAG, "GOS-DEBUG: loadGroupWidgetProvidersLocked with allReceivers (component, uid): " + list);
+        }
         for (int i = 0; i < N; i++) {
             ResolveInfo receiver = allReceivers.get(i);
             addProviderLocked(receiver);
@@ -3450,6 +3474,12 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         ComponentName componentName = new ComponentName(ri.activityInfo.packageName,
                 ri.activityInfo.name);
         ProviderId providerId = new ProviderId(ri.activityInfo.applicationInfo.uid, componentName);
+        final int activityUid = ri.activityInfo.applicationInfo.uid;
+        final int userIdFromProvider = UserHandle.getUserId(activityUid);
+        if (userIdFromProvider != UserHandle.getUserId(Binder.getCallingUid())) {
+            Slog.d(TAG, "GOS-DEBUG: addProviderLocked: for activityInfo " + ri.activityInfo.packageName
+                    + " " + ri.activityInfo.packageName + " is for uid " + activityUid + " but callingUid is " + Binder.getCallingUid());
+        }
 
         // we might have an inactive entry for this provider already due to
         // a preceding restore operation.  if so, fix it up in place; otherwise
@@ -3959,13 +3989,15 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                         info.configure = cn;
                     } else {
                         Slog.d(TAG,
-                                "ignoring invalid configuration activity: " + cn.toShortString() + ", source", providerId.source);
+                                "ignoring invalid configuration activity: " + cn.toShortString()
+                                        + ", callingUid " + Binder.getCallingUid()
+                                        + ", providerId.uid " + providerId.uid + ", uidSource " + providerId.uidSource + ", source", providerId.source);
                     }
                 } catch (SecurityException e) {
                     Slog.e(TAG,
                             "bad invalid configuration activity: " + cn.toShortString()
                                     + ", callingUid " + Binder.getCallingUid()
-                                    + ", providerId.uid " + providerId.uid + ", source", providerId.source);
+                                    + ", providerId.uid " + providerId.uid + ", uidSource " + providerId.uidSource + ", source", providerId.source);
                     Slog.d(TAG, "original exception", e);
                     throw e;
                 }
@@ -6344,11 +6376,13 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         final int uid;
         final ComponentName componentName;
         final Throwable source;
+        final int uidSource;
 
         ProviderId(int uid, ComponentName componentName) {
             this.uid = uid;
             this.componentName = componentName;
             source = new Throwable();
+            uidSource = Binder.getCallingUid();
         }
 
         public UserHandle getProfile() {
