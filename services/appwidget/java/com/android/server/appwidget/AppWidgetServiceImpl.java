@@ -4016,7 +4016,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
 
                             nb.setWhen(now);
                             nb.setShowWhen(true);
-                            UserHandle user = UserHandle.of(ActivityManager.getCurrentUser());
+                            UserHandle user = getCurrentUserNow();
                             context.getSystemService(NotificationManager.class)
                                     .notifyAsUser(null, 308329, nb.build(), user);
                         }
@@ -4039,7 +4039,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                                 + " for " + cn.toShortString());
                         nb.setWhen(now);
                         nb.setShowWhen(true);
-                        UserHandle user = UserHandle.of(ActivityManager.getCurrentUser());
+                        UserHandle user = getCurrentUserNow();
                         context.getSystemService(NotificationManager.class)
                                 .notifyAsUser(null, 308328, nb.build(), user);
                     }
@@ -4074,6 +4074,15 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
             Slog.w(TAG, "XML parsing failed for AppWidget provider "
                     + providerId.componentName + " for user " + providerId.uid, e);
             return null;
+        }
+    }
+
+    private static UserHandle getCurrentUserNow() {
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            return UserHandle.of(ActivityManager.getCurrentUser());
+        } finally {
+            Binder.restoreCallingIdentity(identity);
         }
     }
 
