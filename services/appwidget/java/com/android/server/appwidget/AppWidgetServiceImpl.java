@@ -51,6 +51,8 @@ import android.app.BroadcastOptions;
 import android.app.IApplicationThread;
 import android.app.IServiceConnection;
 import android.app.KeyguardManager;
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.StatsManager;
 import android.app.admin.DevicePolicyManagerInternal;
@@ -150,6 +152,7 @@ import com.android.internal.appwidget.IAppWidgetHost;
 import com.android.internal.appwidget.IAppWidgetService;
 import com.android.internal.config.sysui.SystemUiDeviceConfigFlags;
 import com.android.internal.infra.AndroidFuture;
+import com.android.internal.notification.SystemNotificationChannels;
 import com.android.internal.os.BackgroundThread;
 import com.android.internal.os.SomeArgs;
 import com.android.internal.util.ArrayUtils;
@@ -3894,6 +3897,9 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         return null;
     }
 
+    private static long lastTimeNotifiedException = 0;
+    private static long lastTimeNotifiedBad = 0;
+
     private static AppWidgetProviderInfo parseAppWidgetProviderInfo(Context context,
             ProviderId providerId, ActivityInfo activityInfo, String metadataKey) {
         final PackageManager pm = context.getPackageManager();
@@ -3992,6 +3998,23 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                                 "ignoring invalid configuration activity: " + cn.toShortString()
                                         + ", callingUid " + Binder.getCallingUid()
                                         + ", providerId.uid " + providerId.uid + ", uidSource " + providerId.uidSource + ", source", providerId.source);
+                        long now = System.currentTimeMillis();
+                        if (now - lastTimeNotifiedBad > 60 * 60 * 1000) {
+                            lastTimeNotifiedBad = now;
+                            var nb = new Notification.Builder(context,
+                                    SystemNotificationChannels.WIDGET_ERROR);
+                            nb.setSmallIcon(R.drawable.ic_error);
+                            nb.setContentTitle("invalid widget activity");
+                            nb.setContentText("UID " + Binder.getCallingUid()
+                                    + " has invalid app widget, provider uid " + providerId.uid
+                                    + " for " + cn.toShortString());
+
+                            nb.setWhen(now);
+                            nb.setShowWhen(true);
+                            UserHandle user = UserHandle.of(ActivityManager.getCurrentUser());
+                            context.getSystemService(NotificationManager.class)
+                                    .notifyAsUser(null, 308329, nb.build(), user);
+                        }
                     }
                 } catch (SecurityException e) {
                     Slog.e(TAG,
@@ -3999,7 +4022,23 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                                     + ", callingUid " + Binder.getCallingUid()
                                     + ", providerId.uid " + providerId.uid + ", uidSource " + providerId.uidSource + ", source", providerId.source);
                     Slog.d(TAG, "original exception", e);
-                    throw e;
+                    long now = System.currentTimeMillis();
+                    if (now - lastTimeNotifiedException > 3_000) {
+                        lastTimeNotifiedException = now;
+                        var nb = new Notification.Builder(context,
+                                SystemNotificationChannels.WIDGET_ERROR);
+                        nb.setSmallIcon(R.drawable.ic_error);
+                        nb.setContentTitle("App widget crash");
+                        nb.setContentText("UID " + Binder.getCallingUid()
+                                + " would've crashed from app widget bad uid " + providerId.uid
+                                + " for " + cn.toShortString());
+                        nb.setWhen(now);
+                        nb.setShowWhen(true);
+                        UserHandle user = UserHandle.of(ActivityManager.getCurrentUser());
+                        context.getSystemService(NotificationManager.class)
+                                .notifyAsUser(null, 308328, nb.build(), user);
+                    }
+                    // throw e;
                 }
             }
             info.label = activityInfo.loadLabel(pm).toString();

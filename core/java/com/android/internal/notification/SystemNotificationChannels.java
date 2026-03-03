@@ -285,6 +285,8 @@ public class SystemNotificationChannels {
     public static final String EXPLOIT_PROTECTION = "EXPLOIT_PROTECTION";
     public static final String SYSTEM_JOURNAL = "SYSTEM_JOURNAL";
 
+    public static final String WIDGET_ERROR = "WIDGET_ERROR";
+
     private static void extraChannels(Context ctx, List<NotificationChannel> dest) {
         channel(ctx, MISSING_PERMISSION,
                     R.string.notification_channel_missing_permission,
@@ -300,6 +302,9 @@ public class SystemNotificationChannels {
 
         channel(ctx, SYSTEM_JOURNAL, R.string.notif_ch_system_journal,
             NotificationManager.IMPORTANCE_HIGH, true, dest);
+
+        blockableChannelNameLiteral(WIDGET_ERROR, "Widget errors",
+                NotificationManager.IMPORTANCE_HIGH, false, dest);
     }
 
     private static NotificationChannel channel(Context ctx, String id, int nameRes, int importance, boolean silent, List<NotificationChannel> dest) {
@@ -308,6 +313,17 @@ public class SystemNotificationChannels {
             c.setSound(null, null);
             c.enableVibration(false);
         }
+        dest.add(c);
+        return c;
+    }
+
+    private static NotificationChannel blockableChannelNameLiteral(String id, String name, int importance, boolean silent, List<NotificationChannel> dest) {
+        var c = new NotificationChannel(id, name, importance);
+        if (silent) {
+            c.setSound(null, null);
+            c.enableVibration(false);
+        }
+        c.setBlockable(true);
         dest.add(c);
         return c;
     }
