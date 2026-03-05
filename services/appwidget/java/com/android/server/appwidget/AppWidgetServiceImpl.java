@@ -3488,6 +3488,11 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
             Slog.w(TAG, "GOS-DEBUG: addProviderLocked: for activityInfo " + ri.activityInfo.packageName
                     + " " + ri.activityInfo.packageName + " is for uid " + activityUid + " but callingUid is " + Binder.getCallingUid(), new Throwable());
         }
+        UserHandle userNow = getCurrentUserNow();
+        if (userNow.getIdentifier() != userIdFromProvider) {
+            Slog.w(TAG, "GOS-DEBUG: addProviderLocked: for activityInfo " + ri.activityInfo.packageName
+                    + " " + ri.activityInfo.packageName + " is for uid " + activityUid + " but current user is " + userNow.getIdentifier(), new Throwable());
+        }
 
         // we might have an inactive entry for this provider already due to
         // a preceding restore operation.  if so, fix it up in place; otherwise
