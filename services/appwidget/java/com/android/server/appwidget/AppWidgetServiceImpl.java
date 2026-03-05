@@ -3486,7 +3486,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         final int userIdFromProvider = UserHandle.getUserId(activityUid);
         if (userIdFromProvider != UserHandle.getUserId(Binder.getCallingUid())) {
             Slog.w(TAG, "GOS-DEBUG: addProviderLocked: for activityInfo " + ri.activityInfo.packageName
-                    + " " + ri.activityInfo.packageName + " is for uid " + activityUid + " but callingUid is " + Binder.getCallingUid());
+                    + " " + ri.activityInfo.packageName + " is for uid " + activityUid + " but callingUid is " + Binder.getCallingUid(), new Throwable());
         }
 
         // we might have an inactive entry for this provider already due to
@@ -4017,8 +4017,13 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                             nb.setWhen(now);
                             nb.setShowWhen(true);
                             UserHandle user = getCurrentUserNow();
-                            context.getSystemService(NotificationManager.class)
-                                    .notifyAsUser(null, 308329, nb.build(), user);
+                            final long iden = Binder.clearCallingIdentity();
+                            try {
+                                context.getSystemService(NotificationManager.class)
+                                        .notifyAsUser(null, 308329, nb.build(), user);
+                            } finally {
+                                Binder.restoreCallingIdentity(iden);
+                            }
                         }
                     }
                 } catch (SecurityException e) {
@@ -4040,8 +4045,13 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                         nb.setWhen(now);
                         nb.setShowWhen(true);
                         UserHandle user = getCurrentUserNow();
-                        context.getSystemService(NotificationManager.class)
-                                .notifyAsUser(null, 308328, nb.build(), user);
+                        final long iden = Binder.clearCallingIdentity();
+                        try {
+                            context.getSystemService(NotificationManager.class)
+                                    .notifyAsUser(null, 308328, nb.build(), user);
+                        } finally {
+                            Binder.restoreCallingIdentity(iden);
+                        }
                     }
                     // throw e;
                 }
