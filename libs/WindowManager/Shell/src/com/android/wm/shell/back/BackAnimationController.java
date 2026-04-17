@@ -49,12 +49,14 @@ import android.graphics.Point;
 import android.graphics.Rect;
 import android.hardware.input.InputManager;
 import android.hardware.input.KeyGestureEvent;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteCallback;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.os.UserHandle;
 import android.util.Log;
 import android.view.IRemoteAnimationRunner;
 import android.view.InputDevice;
@@ -401,6 +403,7 @@ public class BackAnimationController implements RemoteCallable<BackAnimationCont
         @Override
         public void setBackToLauncherCallback(IOnBackInvokedCallback callback,
                 IRemoteAnimationRunner runner) {
+            final int callingUserId = UserHandle.getUserId(Binder.getCallingUid());
             executeRemoteCallWithTaskPermission(mController, "setBackToLauncherCallback",
                     (controller) -> controller.registerAnimation(
                             BackNavigationInfo.TYPE_RETURN_TO_HOME,
@@ -409,14 +412,15 @@ public class BackAnimationController implements RemoteCallable<BackAnimationCont
                                     runner,
                                     controller.mContext,
                                     CUJ_PREDICTIVE_BACK_HOME,
-                                    mHandler)));
+                                    mHandler),
+                            callingUserId));
         }
 
         @Override
         public void clearBackToLauncherCallback() {
+            final int callingUserId = UserHandle.getUserId(Binder.getCallingUid());
             executeRemoteCallWithTaskPermission(mController, "clearBackToLauncherCallback",
-                    (controller) -> controller.unregisterAnimation(
-                            BackNavigationInfo.TYPE_RETURN_TO_HOME));
+                    (controller) -> controller.clearHomeRunnerIfOwnedBy(callingUserId));
         }
 
         public void customizeStatusBarAppearance(AppearanceRegion appearance) {
@@ -441,8 +445,28 @@ public class BackAnimationController implements RemoteCallable<BackAnimationCont
         mShellBackAnimationRegistry.registerAnimation(type, runner);
     }
 
+    /**
+     * Registers an animation runner for {@code type}, tagging a TYPE_RETURN_TO_HOME entry with
+     * {@code ownerUserId} so {@link #startBackNavigation} can evict it at dispatch time if the
+     * foreground user no longer matches.
+     */
+    void registerAnimation(@BackNavigationInfo.BackTargetType int type,
+            @NonNull BackAnimationRunner runner, int ownerUserId) {
+        mShellBackAnimationRegistry.registerAnimation(type, runner, ownerUserId);
+    }
+
     void unregisterAnimation(@BackNavigationInfo.BackTargetType int type) {
         mShellBackAnimationRegistry.unregisterAnimation(type);
+    }
+
+    /**
+     * Clears the TYPE_RETURN_TO_HOME entry only if its registered owner matches
+     * {@code callingUserId}. Used by
+     * {@link IBackAnimationImpl#clearBackToLauncherCallback} to reject a late clear from a
+     * different user's launcher that would otherwise wipe the current user's live runner.
+     */
+    void clearHomeRunnerIfOwnedBy(int callingUserId) {
+        mShellBackAnimationRegistry.clearHomeRunnerIfOwnedBy(callingUserId);
     }
 
     private BackTouchTracker getActiveTracker() {
@@ -622,6 +646,13 @@ public class BackAnimationController implements RemoteCallable<BackAnimationCont
         }
         try {
             startLatencyTracking();
+            // Drop a stale TYPE_RETURN_TO_HOME runner whose registering user no longer matches
+            // the current foreground user. This covers the case where the previous foreground
+            // user's launcher is cgroup-frozen across a user switch: its binder stays alive from
+            // the kernel's perspective, so no DeathRecipient fires and no explicit clear runs.
+            // Dispatching to it would time out at 2000ms with "Animation didn't finish".
+            mShellBackAnimationRegistry.evictHomeRunnerIfNotOwnedBy(
+                    mShellController.getCurrentUserId());
             if (mBackAnimationAdapter != null
                     && mShellBackAnimationRegistry.hasSupportedAnimatorsChanged()) {
                 mBackAnimationAdapter.updateSupportedAnimators(

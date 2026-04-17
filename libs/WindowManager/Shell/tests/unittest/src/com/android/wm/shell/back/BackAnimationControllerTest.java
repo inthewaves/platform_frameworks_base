@@ -244,6 +244,96 @@ public class BackAnimationControllerTest extends ShellTestCase {
     }
 
     @Test
+    public void evictHomeRunner_dropsEntryWhenOwnerUserDiffers() {
+        mController.registerAnimation(
+                BackNavigationInfo.TYPE_RETURN_TO_HOME,
+                new BackAnimationRunner(
+                        mAnimatorCallback,
+                        mBackAnimationRunner,
+                        mContext,
+                        mHandler),
+                /* ownerUserId= */ 0);
+        assertTrue(mShellBackAnimationRegistry.hasAnimation(
+                BackNavigationInfo.TYPE_RETURN_TO_HOME));
+
+        boolean evicted = mShellBackAnimationRegistry.evictHomeRunnerIfNotOwnedBy(10);
+
+        assertTrue(evicted);
+        assertFalse(mShellBackAnimationRegistry.hasAnimation(
+                BackNavigationInfo.TYPE_RETURN_TO_HOME));
+    }
+
+    @Test
+    public void evictHomeRunner_retainsEntryWhenOwnerUserMatches() {
+        mController.registerAnimation(
+                BackNavigationInfo.TYPE_RETURN_TO_HOME,
+                new BackAnimationRunner(
+                        mAnimatorCallback,
+                        mBackAnimationRunner,
+                        mContext,
+                        mHandler),
+                /* ownerUserId= */ 0);
+
+        boolean evicted = mShellBackAnimationRegistry.evictHomeRunnerIfNotOwnedBy(0);
+
+        assertFalse(evicted);
+        assertTrue(mShellBackAnimationRegistry.hasAnimation(
+                BackNavigationInfo.TYPE_RETURN_TO_HOME));
+    }
+
+    @Test
+    public void evictHomeRunner_retainsEntryWhenOwnerUserUnknown() {
+        // registerAnimation without a userId (e.g. TYPE_CROSS_TASK-style paths) must not be
+        // evicted, since the registry has no owner identity to compare against.
+        registerAnimation(BackNavigationInfo.TYPE_RETURN_TO_HOME);
+
+        boolean evicted = mShellBackAnimationRegistry.evictHomeRunnerIfNotOwnedBy(10);
+
+        assertFalse(evicted);
+        assertTrue(mShellBackAnimationRegistry.hasAnimation(
+                BackNavigationInfo.TYPE_RETURN_TO_HOME));
+    }
+
+    @Test
+    public void clearHomeRunner_dropsEntryWhenOwnerMatches() {
+        mController.registerAnimation(
+                BackNavigationInfo.TYPE_RETURN_TO_HOME,
+                new BackAnimationRunner(
+                        mAnimatorCallback,
+                        mBackAnimationRunner,
+                        mContext,
+                        mHandler),
+                /* ownerUserId= */ 0);
+
+        boolean cleared = mShellBackAnimationRegistry.clearHomeRunnerIfOwnedBy(0);
+
+        assertTrue(cleared);
+        assertFalse(mShellBackAnimationRegistry.hasAnimation(
+                BackNavigationInfo.TYPE_RETURN_TO_HOME));
+    }
+
+    @Test
+    public void clearHomeRunner_rejectsCrossUserClear() {
+        // Simulates a delayed teardown from user 0's launcher (e.g. its onDestroy firing late)
+        // after user 10's launcher has already re-registered a live runner.
+        mController.registerAnimation(
+                BackNavigationInfo.TYPE_RETURN_TO_HOME,
+                new BackAnimationRunner(
+                        mAnimatorCallback,
+                        mBackAnimationRunner,
+                        mContext,
+                        mHandler),
+                /* ownerUserId= */ 10);
+
+        // The clear call comes from user 0, not the current owner (user 10).
+        boolean cleared = mShellBackAnimationRegistry.clearHomeRunnerIfOwnedBy(0);
+
+        assertFalse(cleared);
+        assertTrue(mShellBackAnimationRegistry.hasAnimation(
+                BackNavigationInfo.TYPE_RETURN_TO_HOME));
+    }
+
+    @Test
     public void verifyNavigationFinishes() throws RemoteException {
         final int[] testTypes =
                 new int[] {
