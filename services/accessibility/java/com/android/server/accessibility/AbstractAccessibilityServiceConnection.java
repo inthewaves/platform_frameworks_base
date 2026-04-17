@@ -34,6 +34,7 @@ import static android.view.accessibility.AccessibilityNodeInfo.ACTION_ACCESSIBIL
 import static android.view.accessibility.AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS;
 import static android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK;
 import static android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK;
+import static android.view.accessibility.AccessibilityNodeInfo.ACTION_PASTE;
 
 import static com.android.server.accessibility.Flags.keyEventDispatcherFixFlushRaceCondition;
 import static com.android.server.pm.UserManagerService.enforceCurrentUserIfVisibleBackgroundEnabled;
@@ -353,6 +354,9 @@ abstract class AbstractAccessibilityServiceConnection extends IAccessibilityServ
         int performScreenCapture(
                 ScreenCaptureInternal.LayerCaptureArgs captureArgs,
                 ScreenCaptureInternal.ScreenCaptureListener captureListener);
+
+        void onPasteAction(AbstractAccessibilityServiceConnection connection, int callingUid,
+                int userId, int windowId);
     }
 
     public AbstractAccessibilityServiceConnection(Context context, ComponentName componentName,
@@ -1095,13 +1099,15 @@ abstract class AbstractAccessibilityServiceConnection extends IAccessibilityServ
                     + ";interrogatingTid=" + interrogatingTid);
         }
         final int resolvedWindowId;
+        final int currentUserId;
         synchronized (mLock) {
             if (!hasRightsToCurrentUserLocked()) {
                 return false;
             }
             resolvedWindowId = resolveAccessibilityWindowIdLocked(accessibilityWindowId);
+            currentUserId = mSystemSupport.getCurrentUserIdLocked();
             if (!mSecurityPolicy.canGetAccessibilityNodeInfoLocked(
-                    mSystemSupport.getCurrentUserIdLocked(), this, resolvedWindowId)) {
+                    currentUserId, this, resolvedWindowId)) {
                 return false;
             }
         }
@@ -1109,7 +1115,7 @@ abstract class AbstractAccessibilityServiceConnection extends IAccessibilityServ
             return false;
         }
         return performAccessibilityActionInternal(
-                mSystemSupport.getCurrentUserIdLocked(), resolvedWindowId, accessibilityNodeId,
+                currentUserId, resolvedWindowId, accessibilityNodeId,
                 action, arguments, interactionId, callback, mFetchFlags, interrogatingTid);
     }
 
@@ -2321,6 +2327,7 @@ abstract class AbstractAccessibilityServiceConnection extends IAccessibilityServ
                 connection = mA11yWindowManager.getPictureInPictureActionReplacingConnection();
             }
         }
+        final int callingUid = Binder.getCallingUid();
         final int interrogatingPid = Binder.getCallingPid();
         final long identityToken = Binder.clearCallingIdentity();
         try {
@@ -2334,6 +2341,9 @@ abstract class AbstractAccessibilityServiceConnection extends IAccessibilityServ
             }
             if (windowToken != null) {
                 mWindowManagerService.requestWindowFocus(windowToken);
+            }
+            if (action == ACTION_PASTE) {
+                mSystemSupport.onPasteAction(this, callingUid, userId, resolvedWindowId);
             }
             if (intConnTracingEnabled()) {
                 logTraceIntConn("performAccessibilityAction",

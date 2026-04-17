@@ -144,7 +144,9 @@ public final class KeyGestureEvent {
     public static final int KEY_GESTURE_TYPE_TOGGLE_DISPLAY_COLOR_INVERSION = 87;
     public static final int KEY_GESTURE_TYPE_TOGGLE_TOP_ROW_ACCESSIBILITY_KEY = 88;
     public static final int KEY_GESTURE_TYPE_CONTEXTUAL_INPUT = 89;
-    public static final int KEY_GESTURE_TYPE_LAUNCH_CONTEXTUAL_CURSOR= 90;
+    public static final int KEY_GESTURE_TYPE_LAUNCH_CONTEXTUAL_CURSOR = 90;
+    public static final int KEY_GESTURE_TYPE_PASTE = 91;
+    public static final int KEY_GESTURE_TYPE_PASTE_AS_PLAIN_TEXT = 92;
 
     public static final int FLAG_CANCELLED = 1 << 0;
     public static final int FLAG_LONG_PRESS = 1 << 1;
@@ -249,6 +251,8 @@ public final class KeyGestureEvent {
             KEY_GESTURE_TYPE_TOGGLE_TOP_ROW_ACCESSIBILITY_KEY,
             KEY_GESTURE_TYPE_CONTEXTUAL_INPUT,
             KEY_GESTURE_TYPE_LAUNCH_CONTEXTUAL_CURSOR,
+            KEY_GESTURE_TYPE_PASTE,
+            KEY_GESTURE_TYPE_PASTE_AS_PLAIN_TEXT,
     })
     @Retention(RetentionPolicy.SOURCE)
     public @interface KeyGestureType {
@@ -871,6 +875,10 @@ public final class KeyGestureEvent {
                 return "KEY_GESTURE_TYPE_CONTEXTUAL_INPUT";
             case KEY_GESTURE_TYPE_LAUNCH_CONTEXTUAL_CURSOR:
                 return "KEY_GESTURE_TYPE_LAUNCH_CONTEXTUAL_CURSOR";
+            case KEY_GESTURE_TYPE_PASTE:
+                return "KEY_GESTURE_TYPE_PASTE";
+            case KEY_GESTURE_TYPE_PASTE_AS_PLAIN_TEXT:
+                return "KEY_GESTURE_TYPE_PASTE_AS_PLAIN_TEXT";
             default:
                 return Integer.toHexString(value);
         }

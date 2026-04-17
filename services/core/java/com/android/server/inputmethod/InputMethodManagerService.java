@@ -183,6 +183,7 @@ import com.android.server.AccessibilityManagerInternal;
 import com.android.server.LocalServices;
 import com.android.server.ServiceThread;
 import com.android.server.SystemService;
+import com.android.server.clipboard.ClipboardManagerInternal;
 import com.android.server.companion.virtual.VirtualDeviceManagerInternal;
 import com.android.server.input.InputManagerInternal;
 import com.android.server.inputmethod.InputMethodManagerInternal.InputMethodListListener;
@@ -1967,6 +1968,7 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
         if (userData.mCurClient == client) {
             final var statsToken = createStatsTokenForFocusedClient(false /* show */,
                     SoftInputShowHideReason.HIDE_REMOVE_CLIENT, userId);
+            revokeLastPasteGrantLocked(userData);
             hideCurrentInputLocked(userData.mImeBindingState.mFocusedWindow,
                     true /* updateTargetWindow */, statsToken,
                     SoftInputShowHideReason.HIDE_REMOVE_CLIENT, userId);
@@ -1982,6 +1984,7 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
             }
             userData.mBoundToAccessibility = false;
             userData.mCurClient = null;
+            userData.mCurStartInputToken = null;
             if (userData.mImeBindingState.mFocusedWindowClient == client) {
                 userData.mImeBindingState = ImeBindingState.newEmptyState();
             }
@@ -2007,6 +2010,7 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
     void unbindCurrentClientLocked(@UnbindReason int reason, @UserIdInt int userId) {
         final var userData = getUserData(userId);
         if (userData.mCurClient != null) {
+            revokeLastPasteGrantLocked(userData);
             ProtoLog.v(IMMS_DEBUG, "unbindCurrentClientLocked: client=%s",
                     userData.mCurClient.mClient.asBinder());
             final var bindingController = userData.mBindingController;
@@ -2029,6 +2033,7 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
             userData.mCurClient.mSessionRequested = false;
             userData.mCurClient.mSessionRequestedForAccessibility = false;
             userData.mCurClient = null;
+            userData.mCurStartInputToken = null;
             ImeTracker.forLogging().onFailed(userData.mCurStatsToken,
                     ImeTracker.PHASE_SERVER_WAIT_IME);
             userData.mCurStatsToken = null;
@@ -2050,6 +2055,7 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
     InputBindResult attachNewInputLocked(@StartInputReason int startInputReason, boolean initial,
             @UserIdInt int userId) {
         final var userData = getUserData(userId);
+        revokeLastPasteGrantLocked(userData);
         final var bindingController = userData.mBindingController;
         if (!userData.mBoundToMethod) {
             bindingController.getCurIme().bindInput(userData.mCurClient.mBinding);
@@ -2058,6 +2064,7 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
 
         final var focusedWindow = userData.mImeBindingState.mFocusedWindow;
         final Binder startInputToken = new Binder();
+        userData.mCurStartInputToken = startInputToken;
         mImeTargetWindowMap.put(startInputToken, focusedWindow);
         final boolean restarting = !initial;
         final StartInputInfo info = new StartInputInfo(userId,
@@ -5093,6 +5100,44 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
         scheduleResetStylusHandwriting();
     }
 
+    @BinderThread
+    @GuardedBy("ImfLock.class")
+    private void onImePasteActionLocked(@NonNull IBinder startInputToken,
+            @NonNull UserData userData) {
+        final var bindingController = userData.mBindingController;
+        final String selectedMethodId = bindingController.getSelectedMethodId();
+        final ClientState curClient = userData.mCurClient;
+        if (curClient == null
+                || selectedMethodId == null
+                || !selectedMethodId.equals(bindingController.getCurId())
+                || userData.mCurStartInputToken != startInputToken) {
+            return;
+        }
+
+        final var cmi = LocalServices.getService(ClipboardManagerInternal.class);
+        if (cmi == null) {
+            return;
+        }
+
+        if (mVdmInternal == null) {
+            mVdmInternal = LocalServices.getService(VirtualDeviceManagerInternal.class);
+        }
+        final int deviceId = mVdmInternal == null
+                ? DEVICE_ID_DEFAULT
+                : mVdmInternal.getDeviceIdForDisplayId(curClient.mSelfReportedDisplayId);
+
+        revokeLastPasteGrantLocked(userData);
+        userData.mLastPasteGrant = cmi.createPasteGrant(curClient.mUid, deviceId);
+    }
+
+    @GuardedBy("ImfLock.class")
+    private void revokeLastPasteGrantLocked(@NonNull UserData userData) {
+        if (userData.mLastPasteGrant != null) {
+            userData.mLastPasteGrant.revoke();
+            userData.mLastPasteGrant = null;
+        }
+    }
+
     @GuardedBy("ImfLock.class")
     private void setInputMethodWithSubtypeIndexLocked(String id, int subtypeIndex,
             @UserIdInt int userId) {
@@ -6351,6 +6396,44 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
                 return userData.mComputerControlInputConnectionMap.get(displayId);
             }
         }
+
+        @Override
+        public void onSystemPasteShortcut(@Nullable IBinder targetInputToken, int actionId) {
+            if (targetInputToken == null) {
+                return;
+            }
+            if (actionId != android.R.id.paste && actionId != android.R.id.pasteAsPlainText) {
+                return;
+            }
+
+            synchronized (ImfLock.class) {
+                final IBinder targetWindowToken =
+                        mWindowManagerInternal.getTargetWindowTokenFromInputToken(targetInputToken);
+                if (targetWindowToken == null) {
+                    return;
+                }
+
+                final int userId = resolveImeUserIdFromWindowLocked(targetWindowToken);
+                final UserData userData = getUserData(userId);
+                final ImeBindingState imeBindingState = userData.mImeBindingState;
+                final ClientState focusedClient = imeBindingState.mFocusedWindowClient;
+
+                if (imeBindingState.mFocusedWindow != targetWindowToken
+                        || focusedClient == null
+                        || imeBindingState.mFocusedWindowEditorInfo == null
+                        || focusedClient != userData.mCurClient
+                        || userData.mCurInputConnection == null
+                        || !isImeClientFocused(targetWindowToken, focusedClient)) {
+                    return;
+                }
+
+                final IInputMethodInvoker curMethod = userData.mBindingController.getCurMethod();
+                if (curMethod == null) {
+                    return;
+                }
+                curMethod.performContextMenuAction(actionId);
+            }
+        }
     }
 
     @BinderThread
@@ -7089,6 +7172,25 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
             }
         }
 
+        @BinderThread
+        @Override
+        public void onPasteAction(IBinder startInputToken, AndroidFuture future /* T=Void */) {
+            @SuppressWarnings("unchecked") final AndroidFuture<Void> typedFuture = future;
+            try {
+                synchronized (ImfLock.class) {
+                    if (startInputToken == null
+                            || !calledWithValidTokenAndUidLocked(mToken, mUserData)) {
+                        typedFuture.complete(null);
+                        return;
+                    }
+                    mImms.onImePasteActionLocked(startInputToken, mUserData);
+                    typedFuture.complete(null);
+                }
+            } catch (Throwable e) {
+                typedFuture.completeExceptionally(e);
+            }
+        }
+
         /**
          * Returns true iff the caller is identified to be the current input method with the token.
          *
@@ -7109,6 +7211,27 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
             if (token != bindingController.getCurToken()) {
                 Slog.e(TAG, "Ignoring " + Debug.getCaller() + " due to an invalid token."
                         + " uid:" + Binder.getCallingUid() + " token:" + token);
+                return false;
+            }
+            return true;
+        }
+
+        /**
+         * Returns true iff the caller is identified to be the current input method with the token
+         * and caller UID.
+         */
+        @GuardedBy("ImfLock.class")
+        private static boolean calledWithValidTokenAndUidLocked(@NonNull IBinder token,
+                @NonNull UserData userData) {
+            if (!calledWithValidTokenLocked(token, userData)) {
+                return false;
+            }
+            final int callingUid = Binder.getCallingUid();
+            final var bindingController = userData.mBindingController;
+            if (callingUid != bindingController.getCurMethodUid()) {
+                Slog.e(TAG, "Ignoring " + Debug.getCaller() + " due to an invalid caller uid."
+                        + " uid:" + callingUid + " expected:"
+                        + bindingController.getCurMethodUid());
                 return false;
             }
             return true;

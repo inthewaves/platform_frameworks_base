@@ -639,9 +639,13 @@ public class InputMethodService extends AbstractInputMethodService {
     @ImeWindowVisibility
     private int mImeWindowVisibility;
 
-    private Object mLock = new Object();
+    private final Object mLock = new Object();
     @GuardedBy("mLock")
     private boolean mNotifyUserActionSent;
+
+    @GuardedBy("mLock")
+    @Nullable
+    private IBinder mStartInputToken;
 
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.P, trackingBug = 115609023)
     final Insets mTmpInsets = new Insets();
@@ -800,6 +804,9 @@ public class InputMethodService extends AbstractInputMethodService {
                     + " ic=" + mInputConnection);
             // Unbind input is per process per display.
             onUnbindInput();
+            synchronized (mLock) {
+                mStartInputToken = null;
+            }
             mInputBinding = null;
             mInputConnection = null;
 
@@ -844,6 +851,9 @@ public class InputMethodService extends AbstractInputMethodService {
                 @NonNull IInputMethod.StartInputParams params) {
             if (!Flags.optimizeImeInputTargetUpdate()) {
                 mPrivOps.reportStartInputAsync(params.startInputToken);
+            }
+            synchronized (mLock) {
+                mStartInputToken = params.startInputToken;
             }
             onNavButtonFlagsChanged(params.navigationBarFlags);
             if (params.restarting) {
@@ -1209,6 +1219,19 @@ public class InputMethodService extends AbstractInputMethodService {
         @Override
         public void changeInputMethodSubtype(InputMethodSubtype subtype) {
             dispatchOnCurrentInputMethodSubtypeChanged(subtype);
+        }
+
+        /**
+         * {@inheritDoc}
+         * @hide
+         */
+        @MainThread
+        @Override
+        public void performContextMenuAction(int id) {
+            InputConnection ic = getCurrentInputConnection();
+            if (ic != null) {
+                ic.performContextMenuAction(id);
+            }
         }
     }
 
@@ -4480,6 +4503,20 @@ public class InputMethodService extends AbstractInputMethodService {
                     return;
                 }
                 inputContentInfo.setUriToken(uriToken);
+            }
+
+            /**
+             * {@inheritDoc}
+             */
+            @Override
+            public void onPasteAction() {
+                final IBinder startInputToken;
+                synchronized (mLock) {
+                    startInputToken = mStartInputToken;
+                }
+                if (startInputToken != null) {
+                    mPrivOps.onPasteAction(startInputToken);
+                }
             }
 
             /**

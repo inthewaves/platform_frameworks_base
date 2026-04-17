@@ -80,6 +80,7 @@ import kotlin.math.sqrt
 // TODO(b/215497659): share code with LocalFloatingToolbarPopup
 class RemoteSelectionToolbar(
     private val hostUid: Int,
+    private val deviceId: Int,
     baseContext: Context,
     showInfo: ShowInfo,
     private val callbackWrapper: RemoteCallbackWrapper,
@@ -240,7 +241,7 @@ class RemoteSelectionToolbar(
                 val tag = v.tag
                 if (tag is ToolbarMenuItem) {
                     if (tag.itemId == R.id.paste || tag.itemId == R.id.pasteAsPlainText) {
-                        onPasteActionCallback.onPasteAction(hostUid)
+                        onPasteActionCallback.onPasteAction(hostUid, deviceId)
                     }
                     callbackWrapper.onMenuItemClicked(tag.itemIndex)
                 }
