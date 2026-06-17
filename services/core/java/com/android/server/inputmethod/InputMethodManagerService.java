@@ -5105,11 +5105,11 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
     private void onImePasteActionLocked(@NonNull IBinder startInputToken,
             @NonNull UserData userData) {
         final var bindingController = userData.mBindingController;
-        final String selectedMethodId = bindingController.getSelectedMethodId();
+        final String selectedImeId = bindingController.getSelectedImeId();
         final ClientState curClient = userData.mCurClient;
         if (curClient == null
-                || selectedMethodId == null
-                || !selectedMethodId.equals(bindingController.getCurId())
+                || selectedImeId == null
+                || !selectedImeId.equals(bindingController.getCurImeId())
                 || userData.mCurStartInputToken != startInputToken) {
             return;
         }
@@ -6427,11 +6427,11 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
                     return;
                 }
 
-                final IInputMethodInvoker curMethod = userData.mBindingController.getCurMethod();
-                if (curMethod == null) {
+                final IInputMethodInvoker curIme = userData.mBindingController.getCurIme();
+                if (curIme == null) {
                     return;
                 }
-                curMethod.performContextMenuAction(actionId);
+                curIme.performContextMenuAction(actionId);
             }
         }
     }
@@ -7228,10 +7228,10 @@ public final class InputMethodManagerService implements IInputMethodManagerImpl.
             }
             final int callingUid = Binder.getCallingUid();
             final var bindingController = userData.mBindingController;
-            if (callingUid != bindingController.getCurMethodUid()) {
+            if (callingUid != bindingController.getCurImeUid()) {
                 Slog.e(TAG, "Ignoring " + Debug.getCaller() + " due to an invalid caller uid."
                         + " uid:" + callingUid + " expected:"
-                        + bindingController.getCurMethodUid());
+                        + bindingController.getCurImeUid());
                 return false;
             }
             return true;
