@@ -59,8 +59,19 @@ public final class SecureSpawnCheck {
         return nativeDumpable();
     }
 
+    // android.system.Os exposes no chdir(), so changing the process cwd needs native code.
+    public static String getCwd() {
+        return nativeGetcwd();
+    }
+
+    public static int changeDir(String path) {
+        return nativeChdir(path);
+    }
+
     private static native String nativeSystemProperty(String key);
     private static native int nativeDumpable();
+    private static native int nativeChdir(String path);
+    private static native String nativeGetcwd();
 
     public record Result(
             SecureAppSpawningSetting secureAppSpawningSetting,

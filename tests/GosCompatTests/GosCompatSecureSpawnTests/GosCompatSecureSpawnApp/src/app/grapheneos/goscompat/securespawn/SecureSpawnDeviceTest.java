@@ -2,14 +2,18 @@ package app.grapheneos.goscompat.securespawn;
 
 import static com.google.common.truth.Truth.assertWithMessage;
 
+import android.content.Context;
 import android.os.Process;
 import android.util.Log;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
+import app.grapheneos.goscompat.securespawn.shared.SecureSpawnCmdlineCheck;
 import app.grapheneos.goscompat.securespawn.shared.SecureSpawnDumpableCheck;
 import app.grapheneos.goscompat.securespawn.shared.SecureSpawnFileDescriptorCheck;
 import app.grapheneos.goscompat.securespawn.shared.SecureSpawnHiddenApiCheck;
+import app.grapheneos.goscompat.securespawn.shared.SecureSpawnMediaProfilesCheck;
 import app.grapheneos.goscompat.securespawn.shared.SecureSpawnReflectiveDumpCheck;
 import app.grapheneos.goscompat.securespawn.shared.SecureSpawnSmapsCheck;
 import app.grapheneos.goscompat.securespawn.shared.SecureSpawnTestApiCompatCheck;
@@ -19,6 +23,7 @@ import org.junit.runner.RunWith;
 
 @RunWith(AndroidJUnit4.class)
 public final class SecureSpawnDeviceTest {
+    private static final String PACKAGE_NAME = "app.grapheneos.goscompat.securespawn";
     private static final String TAG = "GosCompatSecureSpawn";
 
     @Test
@@ -143,6 +148,57 @@ public final class SecureSpawnDeviceTest {
                 .that(result.completed()).isTrue();
         assertWithMessage(failureMessage("expected resultLength > 0", result))
                 .that(result.resultLength()).isGreaterThan(0);
+    }
+
+    @Test
+    public void cmdlinePackageNameReaderCheck() throws Exception {
+        SecureSpawnCheck.ProcessState processState = SecureSpawnCheck.processState();
+        SecureSpawnCmdlineCheck.CmdlinePackageNameRead result =
+                SecureSpawnCmdlineCheck.run(processState.execSpawned());
+        Log.i(TAG, "cmdlinePackageNameReaderCheck\n" + result);
+        assertProcessState(processState);
+        assertWithMessage(failureMessage(
+                "expected cmdline check execSpawned to match process execSpawned", result))
+                .that(result.execSpawned())
+                .isEqualTo(processState.execSpawned());
+        assertWithMessage(failureMessage("expected first cmdline string to be package name",
+                result)).that(result.firstNulOffset()).isEqualTo(PACKAGE_NAME.length());
+        assertWithMessage(failureMessage("expected parsed package name", result))
+                .that(result.parsedPackageName()).isEqualTo(PACKAGE_NAME);
+        assertWithMessage(failureMessage("expected zero-filled argv padding after argv[0]",
+                result)).that(result.nonZeroBytesAfterFirstNul()).isEqualTo(0);
+        assertWithMessage(failureMessage("expected 256 byte package buffer not to"
+                + " overflow", result)).that(result.wouldOverflow()).isFalse();
+        assertWithMessage(failureMessage("expected parser index to fit 256 byte"
+                + " package buffer", result)).that(result.maxIndex()).isAtMost(256);
+    }
+
+    @Test
+    public void mediaProfilesCwdIndependenceCheck() {
+        SecureSpawnCheck.ProcessState processState = SecureSpawnCheck.processState();
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        // The app's own data directory always exists and is never "/", so chdir into it forces a
+        // non-root cwd before the first CamcorderProfile use in this fresh process.
+        String chdirTarget = context.getDataDir().getAbsolutePath();
+        SecureSpawnMediaProfilesCheck.MediaProfilesCwd result =
+                SecureSpawnMediaProfilesCheck.run(processState.execSpawned(), chdirTarget);
+        Log.i(TAG, "mediaProfilesCwdIndependenceCheck\n" + result);
+        assertProcessState(processState);
+        assertWithMessage(failureMessage(
+                "expected media profiles check execSpawned to match process execSpawned", result))
+                .that(result.execSpawned())
+                .isEqualTo(processState.execSpawned());
+        assertWithMessage(failureMessage("expected chdir off \"/\" to succeed", result))
+                .that(result.changedDirectoryOffRoot()).isTrue();
+        // Non-zero legacy id required: the MediaProfiles default fallback instance only ever
+        // defines camera id 0, so profiles on a non-zero id are what prove the device XML loaded.
+        assertWithMessage(failureMessage(
+                "expected a front-facing camera at a non-default legacy id (>= 1)", result))
+                .that(result.frontCameraId()).isAtLeast(1);
+        assertWithMessage(failureMessage(
+                "expected front-camera camcorder profiles to load after chdir off \"/\""
+                        + " (MediaProfiles must not fall back to the default instance)", result))
+                .that(result.frontProfilesLoaded()).isTrue();
     }
 
     private static void testApiCompatCheck(String methodName, boolean expectedAccessAllowed) {

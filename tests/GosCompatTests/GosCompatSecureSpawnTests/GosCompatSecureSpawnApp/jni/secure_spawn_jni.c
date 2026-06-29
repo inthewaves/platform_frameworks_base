@@ -1,6 +1,8 @@
 #include <jni.h>
+#include <limits.h>
 #include <sys/prctl.h>
 #include <sys/system_properties.h>
+#include <unistd.h>
 
 JNIEXPORT jstring JNICALL
 Java_app_grapheneos_goscompat_securespawn_SecureSpawnCheck_nativeSystemProperty(
@@ -25,4 +27,31 @@ Java_app_grapheneos_goscompat_securespawn_SecureSpawnCheck_nativeDumpable(
     (void) clazz;
 
     return prctl(PR_GET_DUMPABLE);
+}
+
+JNIEXPORT jint JNICALL
+Java_app_grapheneos_goscompat_securespawn_SecureSpawnCheck_nativeChdir(
+        JNIEnv* env, jclass clazz, jstring path) {
+    (void) clazz;
+
+    const char* path_chars = (*env)->GetStringUTFChars(env, path, NULL);
+    if (path_chars == NULL) {
+        return -1;
+    }
+
+    int result = chdir(path_chars);
+    (*env)->ReleaseStringUTFChars(env, path, path_chars);
+    return result;
+}
+
+JNIEXPORT jstring JNICALL
+Java_app_grapheneos_goscompat_securespawn_SecureSpawnCheck_nativeGetcwd(
+        JNIEnv* env, jclass clazz) {
+    (void) clazz;
+
+    char buffer[PATH_MAX];
+    if (getcwd(buffer, sizeof(buffer)) == NULL) {
+        return NULL;
+    }
+    return (*env)->NewStringUTF(env, buffer);
 }

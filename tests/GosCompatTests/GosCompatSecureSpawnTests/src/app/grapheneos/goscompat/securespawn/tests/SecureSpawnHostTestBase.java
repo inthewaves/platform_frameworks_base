@@ -47,6 +47,10 @@ abstract class SecureSpawnHostTestBase extends BaseHostJUnit4Test {
             "profileableFromShellDumpableCheck";
     private static final String ACYCLIC_REFLECTIVE_DUMP_METHOD =
             "acyclicReflectiveDumpCheck";
+    private static final String CMDLINE_PACKAGE_READER_METHOD =
+            "cmdlinePackageNameReaderCheck";
+    private static final String MEDIA_PROFILES_CWD_METHOD =
+            "mediaProfilesCwdIndependenceCheck";
     // From libcore/libart/src/main/java/dalvik/system/VMRuntime.java:
     // private static final long ALLOW_TEST_API_ACCESS = 166236554;
     private static final long ALLOW_TEST_API_ACCESS_CHANGE_ID = 166236554L;
@@ -101,6 +105,21 @@ abstract class SecureSpawnHostTestBase extends BaseHostJUnit4Test {
     @Test
     public void fdStateCheck() throws Exception {
         runCheckCase(FD_STATE_METHOD);
+    }
+
+    @Test
+    public void cmdlinePackageNameReaderCheck() throws Exception {
+        runCheckCase(CMDLINE_PACKAGE_READER_METHOD);
+    }
+
+    // Checks that CamcorderProfiles load regardless of the process cwd. The native MediaProfiles
+    // singleton caches its media_profiles XML on the first CamcorderProfile use; before the
+    // frameworks/av patch (MediaProfiles.cpp) that lookup was resolved relative to cwd.
+    // runCheckCase() force-stops the package first, so the device test's chdir runs in a fresh
+    // process before the singleton's first load.
+    @Test
+    public void mediaProfilesCwdIndependenceCheck() throws Exception {
+        runCheckCase(MEDIA_PROFILES_CWD_METHOD);
     }
 
     protected void runDeviceTest(String methodName) throws Exception {
@@ -255,6 +274,12 @@ abstract class SecureSpawnHostTestBase extends BaseHostJUnit4Test {
         }
         if (ACYCLIC_REFLECTIVE_DUMP_METHOD.equals(methodName)) {
             return "acyclic_reflective_dump";
+        }
+        if (CMDLINE_PACKAGE_READER_METHOD.equals(methodName)) {
+            return "cmdline_package_reader";
+        }
+        if (MEDIA_PROFILES_CWD_METHOD.equals(methodName)) {
+            return "media_profiles_cwd";
         }
         return null;
     }
