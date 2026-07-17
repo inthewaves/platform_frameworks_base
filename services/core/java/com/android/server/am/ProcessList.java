@@ -2698,6 +2698,11 @@ public final class ProcessList extends ProcessListInternal
                         app.getDisabledCompatChanges(), app.getEnabledCompatChanges(),
                         useDeliQueue, app.getStartSeq(),
                         new String[]{PROC_START_SEQ_IDENT + app.getStartSeq()});
+                // Exec-spawned WebView processes use the primary zygote, which creates
+                // their process group before returning.
+                if (regularZygote) {
+                    app.mProcessGroupCreated = true;
+                }
             } else if (hostingRecord.usesAppZygote_()) {
                 final AppZygote appZygote = createAppZygoteForProcessIfNeeded(app);
 
