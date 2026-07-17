@@ -51,6 +51,9 @@ abstract class SecureSpawnHostTestBase extends BaseHostJUnit4Test {
             "cmdlinePackageNameReaderCheck";
     private static final String MEDIA_PROFILES_CWD_METHOD =
             "mediaProfilesCwdIndependenceCheck";
+    private static final String WEBVIEW_PROCESS_GROUP_METHOD =
+            "webViewRendererProcessGroupIsRemoved";
+    private static final String WEBVIEW_ACTIVITY_LIFECYCLE_TIMEOUT_MILLIS = "5000";
     // From libcore/libart/src/main/java/dalvik/system/VMRuntime.java:
     // private static final long ALLOW_TEST_API_ACCESS = 166236554;
     private static final long ALLOW_TEST_API_ACCESS_CHANGE_ID = 166236554L;
@@ -113,6 +116,11 @@ abstract class SecureSpawnHostTestBase extends BaseHostJUnit4Test {
     }
 
     @Test
+    public void webViewRendererProcessGroupIsRemoved() throws Exception {
+        runCheckCase(WEBVIEW_PROCESS_GROUP_METHOD);
+    }
+
+    @Test
     public void cmdlinePackageNameReaderCheck() throws Exception {
         runCheckCase(CMDLINE_PACKAGE_READER_METHOD);
     }
@@ -148,6 +156,11 @@ abstract class SecureSpawnHostTestBase extends BaseHostJUnit4Test {
             DeviceTestRunOptions options = new DeviceTestRunOptions(packageName);
             options.setTestClassName(TEST_CLASS);
             options.setTestMethodName(methodName);
+            if (WEBVIEW_PROCESS_GROUP_METHOD.equals(methodName)) {
+                options.addInstrumentationArg(
+                        "activityLifecycleChangeTimeoutMillis",
+                        WEBVIEW_ACTIVITY_LIFECYCLE_TIMEOUT_MILLIS);
+            }
             if (isTestApiCompatMethod(methodName)) {
                 // Adds --no-test-api-access so ALLOW_TEST_API_ACCESS is the deciding signal.
                 options.setDisableTestApiCheck(false);

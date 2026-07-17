@@ -17,6 +17,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".WebViewProcessGroupActivity"
+            android:exported="false" />
+
         <service
             android:name=".NativeSignalProbeService"
             android:exported="false"
