@@ -108,6 +108,11 @@ abstract class SecureSpawnHostTestBase extends BaseHostJUnit4Test {
     }
 
     @Test
+    public void nativeServiceTerminatesOnSigterm() throws Exception {
+        runCheckCase("nativeServiceTerminatesOnSigterm");
+    }
+
+    @Test
     public void cmdlinePackageNameReaderCheck() throws Exception {
         runCheckCase(CMDLINE_PACKAGE_READER_METHOD);
     }

@@ -2,7 +2,11 @@ package app.grapheneos.goscompat.securespawn;
 
 import static com.google.common.truth.Truth.assertWithMessage;
 
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.os.IBinder;
 import android.os.Process;
 import android.util.Log;
 
@@ -21,10 +25,15 @@ import app.grapheneos.goscompat.securespawn.shared.SecureSpawnTestApiCompatCheck
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
 @RunWith(AndroidJUnit4.class)
 public final class SecureSpawnDeviceTest {
     private static final String PACKAGE_NAME = "app.grapheneos.goscompat.securespawn";
     private static final String TAG = "GosCompatSecureSpawn";
+    private static final long NATIVE_SERVICE_TIMEOUT_SECONDS = 10;
 
     @Test
     public void execSpawned() {
@@ -54,6 +63,43 @@ public final class SecureSpawnDeviceTest {
                 .that(result.execSpawned()).isFalse();
         assertWithMessage(failureMessage("expected hardenedMallocDisabled == true", result))
                 .that(result.hardenedMallocDisabled()).isTrue();
+    }
+
+    @Test
+    public void nativeServiceTerminatesOnSigterm() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        CompletableFuture<IBinder> connected = new CompletableFuture<>();
+        ServiceConnection connection = new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName name, IBinder service) {
+                connected.complete(service);
+            }
+
+            @Override
+            public void onServiceDisconnected(ComponentName name) {}
+        };
+        boolean bound = context.bindService(
+                new Intent().setComponent(
+                        ComponentName.createRelative(PACKAGE_NAME, ".NativeSignalProbeService")),
+                connection,
+                Context.BIND_AUTO_CREATE);
+        try {
+            assertWithMessage("expected native signal probe service bind to succeed")
+                    .that(bound).isTrue();
+
+            IBinder binder = connected.get(NATIVE_SERVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            CountDownLatch terminated = new CountDownLatch(1);
+            binder.linkToDeath(terminated::countDown, 0);
+            INativeSignalProbe.Stub.asInterface(binder).terminateWithSigterm();
+
+            assertWithMessage("expected SIGTERM to terminate native signal probe service")
+                    .that(terminated.await(NATIVE_SERVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                    .isTrue();
+        } finally {
+            if (bound) {
+                context.unbindService(connection);
+            }
+        }
     }
 
     @Test
