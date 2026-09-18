@@ -34,6 +34,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Resources;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.database.sqlite.SQLiteOpenHelper;
@@ -80,7 +81,10 @@ public final class GmsHooks {
 
     private static volatile GmsCompatConfig config;
 
-    public static final String PERSISTENT_GmsCore_PROCESS = PACKAGE_GMS_CORE + ".persistent";
+    // GmsCore 26.34.36 (263436035) changed common_persistent_process away from this value.
+    // Use getPersistentGmsCoreProcessName() when resources for the installed version are available.
+    public static final String DEPRECATED_PERSISTENT_GmsCore_PROCESS =
+            PACKAGE_GMS_CORE + ".persistent";
     public static boolean inPersistentGmsCoreProcess;
     public static final String UI_GmsCore_PROCESS = PACKAGE_GMS_CORE + ".ui";
 
@@ -97,7 +101,8 @@ public final class GmsHooks {
         }
 
         if (GmsCompat.isGmsCore()) {
-            inPersistentGmsCoreProcess = processName.equals(PERSISTENT_GmsCore_PROCESS);
+            inPersistentGmsCoreProcess = processName.equals(
+                    getPersistentGmsCoreProcessName(ctx.getResources()));
         }
 
         GmsCompatLib.init(ctx, processName);
@@ -134,7 +139,7 @@ public final class GmsHooks {
             //
             // It's important to use a non-main thread for this call to prevent a deadlock since
             // both GmsHooks.init() and GmsCorePersistentService.onCreate() run on the main thread
-            // of the com.google.android.gms.persistent process.
+            // of the common persistent GmsCore process.
             BackgroundThread.getHandler().post(() ->
                     GmsCompatApp.raisePackageToForeground(PackageId.GMS_CORE_NAME, 0L,
                     "GmsCore persistent process startup", PowerExemptionManager.REASON_OTHER,
@@ -142,6 +147,14 @@ public final class GmsHooks {
         }
 
         GmcPackageManager.init(ctx);
+    }
+
+    public static String getPersistentGmsCoreProcessName(Resources resources) {
+        // common_persistent_process changed from com.google.android.gms.persistent in
+        // GmsCore 26.32.34 (263234035) to com.google.android.gms in 26.34.36 (263436035).
+        int resId = resources.getIdentifier(
+                "common_persistent_process", "string", PACKAGE_GMS_CORE);
+        return resId != 0 ? resources.getString(resId) : DEPRECATED_PERSISTENT_GmsCore_PROCESS;
     }
 
     static Object configUpdateLock;
