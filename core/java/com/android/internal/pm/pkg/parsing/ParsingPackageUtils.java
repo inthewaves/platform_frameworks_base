@@ -2446,7 +2446,7 @@ public class ParsingPackageUtils {
             pkg.sortReceivers();
         }
 
-        List<ParsedService> extraServices = pkg.getPackageParsingHooks().addServices(pkg);
+        List<ParsedService> extraServices = pkg.getPackageParsingHooks().addServices(pkg, res);
         if (extraServices != null) {
             for (var s : extraServices) {
                 hasServiceOrder |= (s.getOrder() != 0);

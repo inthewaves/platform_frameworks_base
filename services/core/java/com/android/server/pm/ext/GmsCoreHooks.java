@@ -5,6 +5,7 @@ import android.app.compat.gms.GmsCorePackageFlag;
 import android.content.pm.GosPackageState;
 import android.content.pm.PackageManagerInternal;
 import android.content.pm.ServiceInfo;
+import android.content.res.Resources;
 import android.ext.PackageId;
 import android.os.SystemProperties;
 import android.service.credentials.CredentialProviderService;
@@ -106,15 +107,19 @@ class GmsCoreHooks extends PackageHooks {
         }
 
         @Override
-        public List<ParsedService> addServices(ParsingPackage pkg) {
+        public List<ParsedService> addServices(ParsingPackage pkg, Resources resources) {
+            String persistentProcessName =
+                    GmsHooks.getPersistentGmsCoreProcessName(resources);
+            Slog.i(TAG, "resolved common persistent process: " + persistentProcessName);
+
             ParsedServiceImpl mp = createService(pkg, GmcMediaProjectionService.class.getName());
-            mp.setProcessName(GmsHooks.PERSISTENT_GmsCore_PROCESS);
+            mp.setProcessName(persistentProcessName);
             mp.setForegroundServiceType(ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
             mp.setExported(false);
 
             ParsedServiceImpl persistent = createService(pkg, GmsCorePersistentService.class.getName());
             persistent.setDirectBootAware(true);
-            persistent.setProcessName(GmsHooks.PERSISTENT_GmsCore_PROCESS);
+            persistent.setProcessName(persistentProcessName);
             persistent.setPermission(GmsCompatApp.SIGNATURE_PROTECTED_PERMISSION);
 
             return List.of(mp, persistent);

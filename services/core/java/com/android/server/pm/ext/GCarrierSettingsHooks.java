@@ -1,6 +1,7 @@
 package com.android.server.pm.ext;
 
 import android.Manifest;
+import android.content.res.Resources;
 
 import com.android.internal.gmscompat.gcarriersettings.TestCarrierConfigService;
 import com.android.internal.pm.pkg.component.ParsedProvider;
@@ -24,7 +25,7 @@ class GCarrierSettingsHooks extends PackageHooks {
         }
 
         @Override
-        public List<ParsedService> addServices(ParsingPackage pkg) {
+        public List<ParsedService> addServices(ParsingPackage pkg, Resources resources) {
             ParsedService s = createService(pkg, TestCarrierConfigService.class.getName());
             return Collections.singletonList(s);
         }

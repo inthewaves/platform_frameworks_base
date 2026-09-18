@@ -70,8 +70,8 @@ public final class GmsCompatApp {
                 FileProxyService fileProxyService = null;
                 if (inPersistentGmsCoreProcess) {
                     // FileProxyService binder needs to be always available to the GmsCore clients.
-                    // "persistent" process launches at bootup and is kept alive by the ServiceConnection
-                    // from the GmsCompatApp, which makes it fit for the purpose of hosting the FileProxyService
+                    // The common persistent process is kept alive by the ServiceConnection from
+                    // GmsCompatApp, which makes it fit for hosting FileProxyService.
                     fileProxyService = new FileProxyService(ctx);
                     gmsCoreFileProxyService = fileProxyService;
 

@@ -2,6 +2,7 @@ package com.android.internal.pm.pkg.parsing;
 
 import android.annotation.Nullable;
 import android.content.pm.PackageManager;
+import android.content.res.Resources;
 
 import com.android.internal.pm.pkg.component.ParsedPermission;
 import com.android.internal.pm.pkg.component.ParsedProvider;
@@ -47,7 +48,7 @@ public class PackageParsingHooks {
 
     }
 
-    public List<ParsedService> addServices(ParsingPackage pkg) {
+    public List<ParsedService> addServices(ParsingPackage pkg, Resources resources) {
         return null;
     }
 
