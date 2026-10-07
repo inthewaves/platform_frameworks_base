@@ -1943,6 +1943,7 @@ class TaskFragment extends WindowContainer<WindowContainer> {
         // warnForNonLeafTask("completePauseLocked");
 
         ActivityRecord prev = mPausingActivity;
+        final boolean wasFinishing = prev != null && prev.finishing;
         ProtoLog.v(WM_DEBUG_STATES, "Complete pause: %s", prev);
 
         if (prev != null) {
@@ -1982,8 +1983,10 @@ class TaskFragment extends WindowContainer<WindowContainer> {
         if (resumeNext) {
             final Task topRootTask = mRootWindowContainer.getTopDisplayFocusedRootTask();
             if (topRootTask != null && !topRootTask.shouldSleepOrShutDownActivities()) {
-                final boolean resumed =
-                        mRootWindowContainer.resumeFocusedTasksTopActivities(topRootTask, prev);
+                final boolean resumed = wasFinishing
+                        ? mRootWindowContainer.resumeFocusedTasksTopActivitiesAfterFinishing(
+                                topRootTask, prev)
+                        : mRootWindowContainer.resumeFocusedTasksTopActivities(topRootTask, prev);
                 if (!resumed && mWmService.mSyncEngine.hasActiveSync()) {
                     // TODO(b/294925498): Remove this once we have accurate ready tracking.
                     mWmService.requestTraversal();
@@ -1997,7 +2000,12 @@ class TaskFragment extends WindowContainer<WindowContainer> {
                     // something. Also if the top activity on the root task is not the just paused
                     // activity, we need to go ahead and resume it to ensure we complete an
                     // in-flight app switch.
-                    mRootWindowContainer.resumeFocusedTasksTopActivities();
+                    // If the activity was finishing, the keyguard filter can skip this resume.
+                    if (wasFinishing) {
+                        mRootWindowContainer.resumeFocusedTasksTopActivitiesAfterFinishing();
+                    } else {
+                        mRootWindowContainer.resumeFocusedTasksTopActivities();
+                    }
                 }
             }
         }
