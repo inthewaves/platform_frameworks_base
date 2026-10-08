@@ -3807,11 +3807,11 @@ final class ActivityRecord extends WindowToken {
         }
 
         final boolean isCurrentVisible = mVisibleRequested || isState(PAUSED, STARTED);
-        if (updateVisibility && isCurrentVisible
+        if (updateVisibility
                 // Avoid intermediate lifecycle change when launching with clearing task.
                 && !task.isClearingToReuseTask()) {
             boolean ensureVisibility = false;
-            if (occludesParent(true /* includingFinishing */)) {
+            if (isCurrentVisible && occludesParent(true /* includingFinishing */)) {
                 // If the current activity is not opaque, we need to make sure the visibilities of
                 // activities be updated, they may be seen by users.
                 ensureVisibility = true;
@@ -3821,6 +3821,9 @@ final class ActivityRecord extends WindowToken {
                 // finishing the top activity that occluded keyguard. So that, the
                 // ActivityStack#mTopActivityOccludesKeyguard can be updated and the activity below
                 // won't be resumed.
+                // The finish path skips resuming activities hidden by keyguard, which can also skip
+                // the visibility update during resume. Update visibility when a stopped occluder
+                // finishes so wake cannot resume an activity using stale keyguard state.
                 ensureVisibility = true;
             }
 
