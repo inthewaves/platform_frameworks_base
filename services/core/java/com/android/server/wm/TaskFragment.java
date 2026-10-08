@@ -2016,6 +2016,24 @@ class TaskFragment extends WindowContainer<WindowContainer> {
 
         mRootWindowContainer.ensureActivitiesVisible(resuming);
 
+        // Mark the transition ready after all activities have finished pausing,
+        // even if nothing resumes. The final pause may finish on the display returning to keyguard
+        // or on another display.
+        // If the call above skipped the visibility update because one is already running or updates
+        // are postponed, let the code completing that update mark the transition ready.
+        if (!mTaskSupervisor.inActivityVisibilityUpdate()
+                && !mTaskSupervisor.isRootVisibilityUpdateDeferred()
+                && mRootWindowContainer.allPausedActivitiesComplete()) {
+            final KeyguardController keyguard = mTaskSupervisor.getKeyguardController();
+            mRootWindowContainer.forAllDisplays(display -> {
+                if (!display.isRemoving() && !display.isRemovedOrInvalid()
+                        && keyguard.isKeyguardLocked(display.mDisplayId)
+                        && !keyguard.isKeyguardOccluded(display.mDisplayId)) {
+                    display.executeAppTransition();
+                }
+            });
+        }
+
         // Notify when the task stack has changed, but only if visibilities changed (not just
         // focus). Also if there is an active root pinned task - we always want to notify it about
         // task stack changes, because its positioning may depend on it.
