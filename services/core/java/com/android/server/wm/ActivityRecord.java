@@ -3936,9 +3936,7 @@ final class ActivityRecord extends WindowToken {
             }
         }
         if (activityRemoved) {
-            // Immediate removal bypasses destroyed(), but still needs the keyguard filter
-            // when resuming the next activity after this one finishes.
-            mRootWindowContainer.resumeFocusedTasksTopActivitiesAfterFinishing();
+            mRootWindowContainer.resumeFocusedTasksTopActivities();
         }
 
         ProtoLog.d(WM_DEBUG_CONTAINERS, "destroyIfPossible: r=%s destroy returned "
@@ -3960,7 +3958,7 @@ final class ActivityRecord extends WindowToken {
             mTaskSupervisor.mFinishingActivities.add(this);
         }
         resumeKeyDispatchingLocked();
-        return mRootWindowContainer.resumeFocusedTasksTopActivitiesAfterFinishing();
+        return mRootWindowContainer.resumeFocusedTasksTopActivities();
     }
 
     /**
@@ -4189,10 +4187,7 @@ final class ActivityRecord extends WindowToken {
             removeFromHistory(reason);
         }
 
-        // The last paused activity in a shared TaskFragment may be the one just removed.
-        // TaskFragment's sleeping check then cannot prevent resuming the activity below,
-        // so keep the keyguard filter through destroy completion.
-        mRootWindowContainer.resumeFocusedTasksTopActivitiesAfterFinishing();
+        mRootWindowContainer.resumeFocusedTasksTopActivities();
     }
 
     /**
